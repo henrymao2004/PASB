@@ -1,0 +1,10 @@
+.env
+.env.*
+!config/env.template
+*.log
+*.tmp
+__pycache__/
+*.pyc
+runs/
+/tmp/
+.DS_Store
