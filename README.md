@@ -2,7 +2,9 @@
 
 **🌐 Language**: **English** | [中文](README_zh.md)
 
-PASB measures **commit-time sycophancy** in self-evolving personal agents (e.g. Hermes-Agent): when does a user-planted preference, claim, or workflow get written into the agent's persistent memory / skill store, and how does that contaminate later answers?
+The problem is not "the model agrees with you on the spot" — chat-time sycophancy benchmarks already measure that. The problem with self-evolving personal agents (e.g. Hermes-Agent) is more dangerous: **the agent learns the user, saves memories, and updates skills**. So a user remark can get written into `USER.md`, `MEMORY.md`, or a `skill_manage` workflow — and from that moment on the agent **isn't just agreeing once, it's working long-term with that bias baked in**.
+
+PASB measures exactly this: **how persistent commits to the agent's memory / skill store contaminate downstream answers** — the mechanism being the agent's commit decision (whether to save, where to save, what attribution to preserve), and the outcome being the sycophancy of subsequent (otherwise neutral) queries.
 
 **Two-axis stress design** (1600 task = 100 base × 4 user need × 4 dialog style):
 
