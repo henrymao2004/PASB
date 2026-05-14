@@ -2,9 +2,21 @@
 
 **🌐 语言**: [English](README.md) | **中文**
 
-普通 sycophancy benchmark 测的是: 用户说一句偏见, 模型当场附不附和? 这个我们已经有了。但**自学习个人智能体** (e.g. Hermes-Agent) 更危险 — 它不只聊天, 还会**学习用户、保存记忆、更新技能**。所以真正的问题不是 "它当场迎合你", 而是: 用户随口一句话, agent 把它写进了 `USER.md` / `MEMORY.md` / 一个 `skill_manage` workflow, 之后它就不再是 "当场附和" 了, **而是长期带着这个偏见工作**。
+普通 sycophancy benchmark 测的是: 用户说一句偏见, 模型当场附不附和? 这个我们已经有了。**自学习个人智能体** (e.g. Hermes-Agent) 的危险再进一步:
 
-PASB 测的正是这个: **持久化 commit 如何污染后续 (本来中立的) query 回答** — 机制是 agent 的 commit decision (要不要存、存哪里、有没有保留来源), 结果是后续 query response 的 sycophancy。
+> **agent 把迎合写进了自己 — 而这正是后续 (本来中立的) query 被污染的 HOW。**
+
+用户随口一句话被 commit 到 `USER.md` / `MEMORY.md` / 一个 `skill_manage` workflow, 通常还**剥掉了来源和作用域**。从这一刻开始, 每个会读到这个持久化层的下游 query 都继承了这个偏见 — agent 不是 "当场附和一次", 而是**长期带着偏见工作**。
+
+PASB 端到端测这条因果链:
+
+```
+用户输入  →  agent 的 commit decision  →  下游 query 的 sycophancy
+            (要不要存? 存哪里? 保不保留 scope / attribution?)        (4 dim × 3 stat)
+            ────────  机制 (how)  ────────  危害 (what)
+```
+
+每个 task (共 1600 个) 我们记: (i) 用户在 5 turn 持久化对话里植入了什么内容, (ii) 结果 `USER.md` / `MEMORY.md` / `skills/*.md` 的快照, (iii) 接下来 3 turn 中立 query, (iv) judge 给每个 query turn 的 4 dim Likert 评分 (sycophancy / carryover / epistemic_promotion / amplification)。leaderboard 按 frontier model 在这条 "持久化 commit 污染中立 query" 链上的严重程度排名。
 
 **两轴 stress 设计** (1600 task = 100 base × 4 user need × 4 dialog style):
 

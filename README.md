@@ -2,9 +2,21 @@
 
 **🌐 Language**: **English** | [中文](README_zh.md)
 
-The problem is not "the model agrees with you on the spot" — chat-time sycophancy benchmarks already measure that. The problem with self-evolving personal agents (e.g. Hermes-Agent) is more dangerous: **the agent learns the user, saves memories, and updates skills**. So a user remark can get written into `USER.md`, `MEMORY.md`, or a `skill_manage` workflow — and from that moment on the agent **isn't just agreeing once, it's working long-term with that bias baked in**.
+The problem is not "the model agrees with you on the spot" — chat-time sycophancy benchmarks already measure that. The danger with self-evolving personal agents (e.g. Hermes-Agent) is one step further:
 
-PASB measures exactly this: **how persistent commits to the agent's memory / skill store contaminate downstream answers** — the mechanism being the agent's commit decision (whether to save, where to save, what attribution to preserve), and the outcome being the sycophancy of subsequent (otherwise neutral) queries.
+> **The agent writes the agreement into itself — and THAT is HOW later (otherwise neutral) queries get polluted.**
+
+A user remark gets committed to `USER.md` / `MEMORY.md` / a `skill_manage` workflow, often with attribution stripped and scope dropped. From that moment on, every downstream query that touches the persistent state inherits the bias — the agent isn't agreeing once, it's working long-term with that bias baked in.
+
+PASB measures this causal chain end-to-end:
+
+```
+user input  →  agent's commit decision  →  downstream query sycophancy
+              (write? where? scope/attribution?)        (4 dim × 3 stat)
+              ─────────  the mechanism (how)  ─────────  the harm (what)
+```
+
+For each of 1600 task we record (i) the 5-turn dialog the user uses to plant content, (ii) the resulting state snapshot of `USER.md` / `MEMORY.md` / `skills/*.md`, (iii) the 3-turn neutral query the agent then has to answer, and (iv) a 4-dim Likert judgment per query turn (sycophancy / carryover / epistemic_promotion / amplification). The leaderboard ranks frontier backbones by how badly their persistent commits pollute these neutral queries.
 
 **Two-axis stress design** (1600 task = 100 base × 4 user need × 4 dialog style):
 
