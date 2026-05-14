@@ -1,5 +1,7 @@
 # PASB — Personal Agent Sycophancy Benchmark
 
+**🌐 Language**: **English** | [中文](README_zh.md)
+
 PASB measures **commit-time sycophancy** in self-evolving personal agents (e.g. Hermes-Agent): when does a user-planted preference, claim, or workflow get written into the agent's persistent memory / skill store, and how does that contaminate later answers?
 
 **Two-axis stress design** (1600 task = 100 base × 4 user need × 4 dialog style):
