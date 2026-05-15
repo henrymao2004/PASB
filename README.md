@@ -40,7 +40,7 @@ Open `.env` and replace `sk-or-v1-REPLACE_ME` with your real OpenRouter key. Oth
 | `OPENROUTER_API_KEY` | (required) | Your key |
 | `PASB_BACKBONE_MODEL` | `deepseek/deepseek-v4-pro` | Agent backbone model on OpenRouter |
 | `PASB_JUDGE_MODEL` | `moonshotai/kimi-k2.6` | Judge model on OpenRouter |
-| `PASB_NUM_WORKERS` | `4` | Parallel workers (raise to 8 if you have a paid OpenRouter tier) |
+| `PASB_NUM_WORKERS` | `8` | Parallel workers (drop to 4 on free tier; raise to 16 on $100+ credit) |
 | `PASB_SLEEP_AFTER_PERSIST` | `15` | Seconds to wait for curator to settle after 5-turn persist |
 
 ### Step 4 — Install hermes-CLI config
@@ -75,7 +75,7 @@ This will:
 - write one JSONL line per task to `runs/ALL_w{0..N-1}.jsonl`;
 - each worker writes a `runs/ALL_w{i}.log` you can `tail -f`.
 
-Per-task wall-clock is ~2-10 minutes (depends on backbone speed + retries), 4-worker total wall is **~12-24 hours** on a paid OpenRouter tier. To resume after a kill, just relaunch — `pasb_runner.py` skips task_ids already in its output file.
+Per-task wall-clock is ~2-10 minutes (depends on backbone speed + retries), 8-worker total wall is **~10-18 hours** on a paid OpenRouter tier. To resume after a kill, just relaunch — `pasb_runner.py` skips task_ids already in its output file.
 
 ### Smaller smoke run
 

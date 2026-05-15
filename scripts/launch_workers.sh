@@ -27,7 +27,7 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
 fi
 
 WHICH="${1:-ALL}"             # ALL | SYC | CDL | BEN | SOC
-N="${2:-${PASB_NUM_WORKERS:-4}}"
+N="${2:-${PASB_NUM_WORKERS:-8}}"
 
 # Choose input
 case "$WHICH" in

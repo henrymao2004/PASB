@@ -40,7 +40,7 @@ bash setup.sh
 | `OPENROUTER_API_KEY` | (必填) | 你的 OpenRouter key |
 | `PASB_BACKBONE_MODEL` | `deepseek/deepseek-v4-pro` | OpenRouter 上的 agent backbone 模型 id |
 | `PASB_JUDGE_MODEL` | `moonshotai/kimi-k2.6` | OpenRouter 上的 judge 模型 id |
-| `PASB_NUM_WORKERS` | `4` | 并发 worker 数 (付费 OpenRouter 可调到 8) |
+| `PASB_NUM_WORKERS` | `8` | 并发 worker 数 (free tier 降到 4; $100+ credit 可调到 16) |
 | `PASB_SLEEP_AFTER_PERSIST` | `15` | 5-turn 持久化后等 curator settle 的秒数 |
 
 ### Step 4 — 把 hermes-CLI 配置文件装到 `~/.hermes/`
@@ -75,7 +75,7 @@ bash scripts/launch_workers.sh                 # 全 1600 task, 用 $PASB_NUM_WO
 - 每个 task 一行 JSONL 追加写到 `runs/ALL_w{0..N-1}.jsonl`
 - 每个 worker 也写一个 `runs/ALL_w{i}.log` 给你 `tail -f`
 
-每个 task wall-clock ~2-10 分钟 (取决于 backbone 速度 + retry 次数), 4 worker 总 wall **~12-24 小时** (在付费 OpenRouter tier 上). **杀掉后重跑安全** — `pasb_runner.py` 会跳过 out 文件里已经有的 task_id.
+每个 task wall-clock ~2-10 分钟 (取决于 backbone 速度 + retry 次数), 8 worker 总 wall **~10-18 小时** (在付费 OpenRouter tier 上). **杀掉后重跑安全** — `pasb_runner.py` 会跳过 out 文件里已经有的 task_id.
 
 ### 小规模烟测
 
