@@ -66,7 +66,7 @@ PASB-{SUB_AXIS}-{NNNN}__{substrate}__{progression}
 e.g. PASB-SYC-0001__user_belief__progressive
 ```
 
-- `SUB_AXIS` ∈ {`SYC`, `CDL`, `BEN`, `SOC`} — stimulus class (sycophancy / cross-domain / beneficial / social)
+- `SUB_AXIS` ∈ {`SYC`, `CDL`, `SOC`} — stimulus class (sycophancy / cross-domain / social camouflage). The original `BEN` (beneficial) slot was retired in v8 and its 16 base items were reallocated to `SOC`; legacy v7 result tables that still reference `BEN` remain in `FINAL_PROPOSAL.md` for historical comparison.
 - `NNNN` — base item index
 - `substrate` ∈ {`user_belief`, `attributed_memory`, `unattributed_fact`, `skill_snippet`} (legacy names in JSONL files)
 - `progression` ∈ {`all_at_once`, `progressive`, `drip`, `late_shock`}
@@ -90,7 +90,7 @@ The `NORM` dict at the top of each analysis function in `src/analyze_section4.py
 {
   "task_id": str,                          # see format above
   "base_item_id": str,                     # PASB-SYC-0001 (no variant suffix)
-  "sub_axis": "SYC" | "CDL" | "BEN" | "SOC",
+  "sub_axis": "SYC" | "CDL" | "SOC",
   "substrate": legacy_substrate_name,
   "progression": "all_at_once" | "progressive" | "drip" | "late_shock",
   "trigger": {
@@ -223,7 +223,7 @@ OpenRouter rate-limits **per account**, not per worker. The code is hardened for
 
 ### Pitfall 3: Don't conflate scenario and sub_axis
 
-- `sub_axis` (SYC / CDL / BEN / SOC) is the **stimulus class** — what category of content is planted.
+- `sub_axis` (SYC / CDL / SOC) is the **stimulus class** — what category of content is planted.
 - `substrate` / scenario (`user_belief` etc.) is the **input form** — how the user expresses it.
 
 These are **orthogonal axes**. Don't merge them. §4.1.5 / §4.2 keep them separate; §4.3 (progression) and §4.4 (CDL boundary case) only look at one at a time.

@@ -26,20 +26,20 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
   exit 1
 fi
 
-WHICH="${1:-ALL}"             # ALL | SYC | CDL | BEN | SOC
+WHICH="${1:-ALL}"             # ALL | SYC | CDL | SOC
 N="${2:-${PASB_NUM_WORKERS:-8}}"
 
 # Choose input
 case "$WHICH" in
   ALL)
     INPUT=/tmp/pasb_all_1600.jsonl
-    cat data/tasks_SYC.jsonl data/tasks_CDL.jsonl data/tasks_BEN.jsonl data/tasks_SOC.jsonl > "$INPUT"
+    cat data/tasks_SYC.jsonl data/tasks_CDL.jsonl data/tasks_SOC.jsonl > "$INPUT"
     ;;
-  SYC|CDL|BEN|SOC)
+  SYC|CDL|SOC)
     INPUT="data/tasks_${WHICH}.jsonl"
     ;;
   *)
-    echo "Unknown WHICH=$WHICH (use ALL | SYC | CDL | BEN | SOC)" >&2
+    echo "Unknown WHICH=$WHICH (use ALL | SYC | CDL | SOC)" >&2
     exit 1
     ;;
 esac

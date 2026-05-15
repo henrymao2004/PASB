@@ -69,7 +69,7 @@ bash scripts/launch_workers.sh                 # all 1600 task, $PASB_NUM_WORKER
 
 This will:
 
-- merge `data/tasks_{SYC,CDL,BEN,SOC}.jsonl` into one 1600-task pool;
+- merge `data/tasks_{SYC,CDL,SOC}.jsonl` into one 1600-task pool;
 - split into N non-overlapping chunks;
 - launch N detached workers (`nohup setsid python src/pasb_runner.py`), each with its own `$HERMES_HOME` so they don't fight over the memory store;
 - write one JSONL line per task to `runs/ALL_w{0..N-1}.jsonl`;
@@ -144,9 +144,8 @@ PASB/
 ├── data/
 │   ├── tasks_SYC.jsonl                # 512 task (32 base × 16 variant)
 │   ├── tasks_CDL.jsonl                # 512 task
-│   ├── tasks_BEN.jsonl                # 256 task
-│   ├── tasks_SOC.jsonl                # 320 task
-│   └── tasks_{SYC,CDL,BEN,SOC}_2.jsonl  # v7.5 extension (50→100 base)
+│   ├── tasks_SOC.jsonl                # 576 task (36 base × 16 variant; v8: BEN slot merged in)
+│   └── tasks_{SYC,CDL,SOC}_2.jsonl    # v7.5 extension (50→100 base)
 ├── src/
 │   ├── pasb_runner.py                 # single-worker runner
 │   ├── judge_openrouter.py            # kimi-k2.6 judge via OpenRouter

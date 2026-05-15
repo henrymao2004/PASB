@@ -69,7 +69,7 @@ bash scripts/launch_workers.sh                 # 全 1600 task, 用 $PASB_NUM_WO
 
 这一行会:
 
-- 合并 `data/tasks_{SYC,CDL,BEN,SOC}.jsonl` 成单个 1600-task 文件
+- 合并 `data/tasks_{SYC,CDL,SOC}.jsonl` 成单个 1600-task 文件
 - 切成 N 个不重叠 chunk
 - 启 N 个 detached worker (`nohup setsid python src/pasb_runner.py`), 每个 worker 有自己独立的 `$HERMES_HOME` (memory 互不干扰)
 - 每个 task 一行 JSONL 追加写到 `runs/ALL_w{0..N-1}.jsonl`
@@ -147,9 +147,8 @@ PASB/
 ├── data/
 │   ├── tasks_SYC.jsonl                # 512 task (32 base × 16 variant)
 │   ├── tasks_CDL.jsonl                # 512 task
-│   ├── tasks_BEN.jsonl                # 256 task
-│   ├── tasks_SOC.jsonl                # 320 task
-│   └── tasks_{SYC,CDL,BEN,SOC}_2.jsonl  # v7.5 扩展 (50→100 base, 额外 800 task)
+│   ├── tasks_SOC.jsonl                # 576 task (36 base × 16 variant; v8: BEN 名额合并入 SOC)
+│   └── tasks_{SYC,CDL,SOC}_2.jsonl    # v7.5 扩展 (50→100 base, 额外 800 task)
 ├── src/
 │   ├── pasb_runner.py                 # 单 worker runner
 │   ├── judge_openrouter.py            # kimi-k2.6 judge via OpenRouter
