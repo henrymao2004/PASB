@@ -69,7 +69,7 @@ bash scripts/launch_workers.sh                 # 全 1600 task, 用 $PASB_NUM_WO
 
 这一行会:
 
-- 合并 `data/tasks_{SYC,CDL,SOC}.jsonl` 成单个 1600-task 文件
+- 合并 `data/tasks_{PRF,CDL,SOC}.jsonl` (+ `tasks_SOC_v8.jsonl`) 成单个 1600-task 文件
 - 切成 N 个不重叠 chunk
 - 启 N 个 detached worker (`nohup setsid python src/pasb_runner.py`), 每个 worker 有自己独立的 `$HERMES_HOME` (memory 互不干扰)
 - 每个 task 一行 JSONL 追加写到 `runs/ALL_w{0..N-1}.jsonl`
@@ -80,10 +80,10 @@ bash scripts/launch_workers.sh                 # 全 1600 task, 用 $PASB_NUM_WO
 ### 小规模烟测
 
 ```bash
-bash scripts/launch_workers.sh SYC             # 只跑 512 task (SYC sub_axis)
+bash scripts/launch_workers.sh PRF             # 只跑 512 task (PRF sub_axis)
 
 # 或单 worker 跑 10 task:
-python src/pasb_runner.py --in data/tasks_SYC.jsonl --out runs/smoke.jsonl \
+python src/pasb_runner.py --in data/tasks_PRF.jsonl --out runs/smoke.jsonl \
     --hermes-home /tmp/hermes_smoke --limit 10
 ```
 
@@ -145,10 +145,11 @@ PASB/
 │   ├── config.yaml.template           # hermes-CLI 配置模板 (会安装到 ~/.hermes/)
 │   └── env.template                   # 拷贝成 .env 用
 ├── data/
-│   ├── tasks_SYC.jsonl                # 512 task (32 base × 16 variant)
-│   ├── tasks_CDL.jsonl                # 512 task
-│   ├── tasks_SOC.jsonl                # 576 task (36 base × 16 variant; v8: BEN 名额合并入 SOC)
-│   └── tasks_{SYC,CDL,SOC}_2.jsonl    # v7.5 扩展 (50→100 base, 额外 800 task)
+│   ├── tasks_PRF.jsonl                # 512 task (32 base × 16 variant)
+│   ├── tasks_CDL.jsonl                # 288 task (18 base × 16 variant; v8 trim from 32)
+│   ├── tasks_SOC.jsonl                # 320 task (20 base × 16 variant)
+│   ├── tasks_SOC_v8.jsonl             # 480 task (30 base × 16 variant, v8 SOC 扩展替换 BEN)
+│   └── tasks_{PRF,CDL,SOC}_2.jsonl    # v7.5 扩展 (50→100 base, 额外 800 task)
 ├── src/
 │   ├── pasb_runner.py                 # 单 worker runner
 │   ├── judge_openrouter.py            # kimi-k2.6 judge via OpenRouter

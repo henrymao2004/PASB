@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/launch_workers.sh             # all 1600 task, $PASB_NUM_WORKERS workers
-#   scripts/launch_workers.sh SYC         # SYC sub_axis only (512 task)
+#   scripts/launch_workers.sh PRF         # PRF sub_axis only (512 task)
 #   scripts/launch_workers.sh ALL 8       # all task, force 8 workers
 #
 # Concurrency-safe vs OpenRouter rate limits:
@@ -26,20 +26,20 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
   exit 1
 fi
 
-WHICH="${1:-ALL}"             # ALL | SYC | CDL | SOC
+WHICH="${1:-ALL}"             # ALL | PRF | CDL | SOC
 N="${2:-${PASB_NUM_WORKERS:-8}}"
 
 # Choose input
 case "$WHICH" in
   ALL)
     INPUT=/tmp/pasb_all_1600.jsonl
-    cat data/tasks_SYC.jsonl data/tasks_CDL.jsonl data/tasks_SOC.jsonl > "$INPUT"
+    cat data/tasks_PRF.jsonl data/tasks_CDL.jsonl data/tasks_SOC.jsonl data/tasks_SOC_v8.jsonl > "$INPUT"
     ;;
-  SYC|CDL|SOC)
+  PRF|CDL|SOC)
     INPUT="data/tasks_${WHICH}.jsonl"
     ;;
   *)
-    echo "Unknown WHICH=$WHICH (use ALL | SYC | CDL | SOC)" >&2
+    echo "Unknown WHICH=$WHICH (use ALL | PRF | CDL | SOC)" >&2
     exit 1
     ;;
 esac

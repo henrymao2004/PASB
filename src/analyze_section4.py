@@ -128,7 +128,7 @@ def finding_3(recs):
         "unattributed_fact": "environment_fact",
         "skill_snippet": "procedural_workflow",
     }
-    sub_axes = ["SYC", "CDL", "SOC"]
+    sub_axes = ["PRF", "CDL", "SOC"]
     hdr = f"{'sub_axis':<6} " + " ".join(f"{s[:18]:>18}" for s in scenarios)
     print(hdr)
     for sa in sub_axes:
@@ -223,7 +223,7 @@ def finding_6(recs):
 
     print("\nPer-task burst pattern (max - min across 3 query turn likert):")
     print(f"  {'sub_axis':<6} {'n':>5} {'spike (>=3)':>12} {'flat (<=1)':>12} {'intermediate':>14}")
-    for sa in ["SYC", "CDL", "SOC"]:
+    for sa in ["PRF", "CDL", "SOC"]:
         spike = flat = inter = 0
         for r in recs:
             if r.get("sub_axis") != sa:

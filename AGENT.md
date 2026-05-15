@@ -63,10 +63,10 @@ The agent backbone and the judge **both** go through OpenRouter and **both** use
 
 ```
 PASB-{SUB_AXIS}-{NNNN}__{substrate}__{progression}
-e.g. PASB-SYC-0001__user_belief__progressive
+e.g. PASB-PRF-0001__user_belief__progressive
 ```
 
-- `SUB_AXIS` ∈ {`SYC`, `CDL`, `SOC`} — stimulus class (sycophancy / cross-domain / social camouflage). The original `BEN` (beneficial) slot was retired in v8 and its 16 base items were reallocated to `SOC`; legacy v7 result tables that still reference `BEN` remain in `FINAL_PROPOSAL.md` for historical comparison.
+- `SUB_AXIS` ∈ {`PRF`, `CDL`, `SOC`} — stimulus class (sycophancy / cross-domain / social camouflage). The original `BEN` (beneficial) slot was retired in v8 and its 16 base items were reallocated to `SOC`; legacy v7 result tables that still reference `BEN` remain in `FINAL_PROPOSAL.md` for historical comparison.
 - `NNNN` — base item index
 - `substrate` ∈ {`user_belief`, `attributed_memory`, `unattributed_fact`, `skill_snippet`} (legacy names in JSONL files)
 - `progression` ∈ {`all_at_once`, `progressive`, `drip`, `late_shock`}
@@ -89,8 +89,8 @@ The `NORM` dict at the top of each analysis function in `src/analyze_section4.py
 ```python
 {
   "task_id": str,                          # see format above
-  "base_item_id": str,                     # PASB-SYC-0001 (no variant suffix)
-  "sub_axis": "SYC" | "CDL" | "SOC",
+  "base_item_id": str,                     # PASB-PRF-0001 (no variant suffix)
+  "sub_axis": "PRF" | "CDL" | "SOC",
   "substrate": legacy_substrate_name,
   "progression": "all_at_once" | "progressive" | "drip" | "late_shock",
   "trigger": {
@@ -166,7 +166,7 @@ hermes -z 'hello' --yolo                   # smoke test (should return a reply)
 
 ```bash
 python src/pasb_runner.py \
-    --in data/tasks_SYC.jsonl \
+    --in data/tasks_PRF.jsonl \
     --out runs/smoke.jsonl \
     --hermes-home /tmp/hermes_smoke \
     --limit 10
@@ -223,7 +223,7 @@ OpenRouter rate-limits **per account**, not per worker. The code is hardened for
 
 ### Pitfall 3: Don't conflate scenario and sub_axis
 
-- `sub_axis` (SYC / CDL / SOC) is the **stimulus class** — what category of content is planted.
+- `sub_axis` (PRF / CDL / SOC) is the **stimulus class** — what category of content is planted.
 - `substrate` / scenario (`user_belief` etc.) is the **input form** — how the user expresses it.
 
 These are **orthogonal axes**. Don't merge them. §4.1.5 / §4.2 keep them separate; §4.3 (progression) and §4.4 (CDL boundary case) only look at one at a time.
@@ -234,8 +234,8 @@ If you see references to `judge_kimi` (Bailian endpoint) — that's the legacy c
 
 ### Pitfall 5: 100 base items are split across two files per sub_axis
 
-- `data/tasks_SYC.jsonl` = first 32 base × 16 variant = 512 task (original 50 base item set)
-- `data/tasks_SYC_2.jsonl` = next 32 base × 16 variant = 512 task (v7.5 extension, brings total to 100 base)
+- `data/tasks_PRF.jsonl` = first 32 base × 16 variant = 512 task (original 50 base item set)
+- `data/tasks_PRF_2.jsonl` = next 32 base × 16 variant = 512 task (v7.5 extension, brings total to 100 base)
 
 For the **full 1600 task PASB run**, the launcher uses only the `tasks_*.jsonl` files (without `_2` suffix) = 1600 task. The `_2.jsonl` files are an additional 800 task extension that brings the total pool to 2400. **Don't accidentally concat both** — you'll get duplicate task_ids.
 

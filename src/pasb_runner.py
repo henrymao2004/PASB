@@ -4,7 +4,7 @@ OpenRouter for the agent backbone) and then judges via OpenRouter kimi-k2.6.
 
 Usage (one worker):
   python pasb_runner.py \
-      --in  data/tasks_SYC.jsonl \
+      --in  data/tasks_PRF.jsonl \
       --out runs/run_SYC_w0.jsonl \
       --hermes-home /tmp/hermes_w0
 

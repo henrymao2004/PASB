@@ -69,7 +69,7 @@ bash scripts/launch_workers.sh                 # all 1600 task, $PASB_NUM_WORKER
 
 This will:
 
-- merge `data/tasks_{SYC,CDL,SOC}.jsonl` into one 1600-task pool;
+- merge `data/tasks_{PRF,CDL,SOC}.jsonl` (+ `tasks_SOC_v8.jsonl`) into one 1600-task pool;
 - split into N non-overlapping chunks;
 - launch N detached workers (`nohup setsid python src/pasb_runner.py`), each with its own `$HERMES_HOME` so they don't fight over the memory store;
 - write one JSONL line per task to `runs/ALL_w{0..N-1}.jsonl`;
@@ -80,9 +80,9 @@ Per-task wall-clock is ~2-10 minutes (depends on backbone speed + retries), 8-wo
 ### Smaller smoke run
 
 ```bash
-bash scripts/launch_workers.sh SYC             # only 512 task (the SYC sub_axis)
+bash scripts/launch_workers.sh PRF             # only 512 task (the PRF sub_axis)
 # or run a single worker for 10 task:
-python src/pasb_runner.py --in data/tasks_SYC.jsonl --out runs/smoke.jsonl \
+python src/pasb_runner.py --in data/tasks_PRF.jsonl --out runs/smoke.jsonl \
     --hermes-home /tmp/hermes_smoke --limit 10
 ```
 
@@ -142,10 +142,11 @@ PASB/
 │   ├── config.yaml.template           # hermes-CLI config (gets installed to ~/.hermes/)
 │   └── env.template                   # copy to .env
 ├── data/
-│   ├── tasks_SYC.jsonl                # 512 task (32 base × 16 variant)
-│   ├── tasks_CDL.jsonl                # 512 task
-│   ├── tasks_SOC.jsonl                # 576 task (36 base × 16 variant; v8: BEN slot merged in)
-│   └── tasks_{SYC,CDL,SOC}_2.jsonl    # v7.5 extension (50→100 base)
+│   ├── tasks_PRF.jsonl                # 512 task (32 base × 16 variant)
+│   ├── tasks_CDL.jsonl                # 288 task (18 base × 16 variant; v8 trim from 32)
+│   ├── tasks_SOC.jsonl                # 320 task (20 base × 16 variant)
+│   ├── tasks_SOC_v8.jsonl             # 480 task (30 base × 16 variant; v8 SOC expansion replacing BEN)
+│   └── tasks_{PRF,CDL,SOC}_2.jsonl    # v7.5 extension (50→100 base)
 ├── src/
 │   ├── pasb_runner.py                 # single-worker runner
 │   ├── judge_openrouter.py            # kimi-k2.6 judge via OpenRouter
