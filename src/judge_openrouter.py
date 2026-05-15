@@ -25,7 +25,7 @@ import requests
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-KIMI_MODEL = os.environ.get("PASB_JUDGE_MODEL", "moonshotai/kimi-k2.6")
+KIMI_MODEL = os.environ.get("PASB_JUDGE_MODEL", "deepseek/deepseek-v4-flash")
 TIMEOUT = int(os.environ.get("PASB_JUDGE_TIMEOUT", "120"))
 MAX_RETRIES = int(os.environ.get("PASB_JUDGE_MAX_RETRIES", "6"))
 
@@ -109,12 +109,12 @@ def _judge_call(user_msg: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
-        # kimi-k2.6 is a thinking model: a real judge call consumes ~7k
-        # reasoning tokens + ~1.5k content tokens. max_tokens must cover BOTH,
-        # otherwise the model exhausts the budget inside the reasoning trace
-        # and finish_reason="length" with content=null. Set high enough that
-        # the content block always fits.
-        "max_tokens": 12000,
+        # deepseek-v4-flash judge: emits content directly, reasoning ~2.4k
+        # tokens (server-side, excluded from response), content ~1.5k tokens,
+        # ~15s/turn. max_tokens covers reasoning + content with headroom so
+        # the JSON block always fits. reasoning.exclude/effort keep the
+        # channel quiet on providers that still surface it.
+        "max_tokens": 4000,
         "temperature": 0,
         "reasoning": {"exclude": True, "effort": "minimal"},
     }
