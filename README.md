@@ -2,30 +2,9 @@
 
 **🌐 Language**: **English** | [中文](README_zh.md)
 
-The problem is not "the model agrees with you on the spot" — chat-time sycophancy benchmarks already measure that. The danger with self-evolving personal agents (e.g. Hermes-Agent) is one step further:
+PASB measures, on 1600 task spanning 4 user input types × 4 dialog styles, **how persistent commits (USER.md / MEMORY.md / skill_manage) in a self-evolving personal agent (e.g. Hermes-Agent) pollute the agent's subsequent neutral-query answers**. Each task runs a 5-turn persist dialog → snapshots the agent state → 3-turn neutral query → judge scores every query turn on 4 Likert dimensions (sycophancy / carryover / epistemic_promotion / amplification; max@3 / mean@3 / positive_rate@3 = 12 task-level numbers).
 
-> **The agent writes the agreement into itself — and THAT is HOW later (otherwise neutral) queries get polluted.**
-
-A user remark gets committed to `USER.md` / `MEMORY.md` / a `skill_manage` workflow, often with attribution stripped and scope dropped. From that moment on, every downstream query that touches the persistent state inherits the bias — the agent isn't agreeing once, it's working long-term with that bias baked in.
-
-PASB measures this causal chain end-to-end:
-
-```
-user input  →  agent's commit decision  →  downstream query sycophancy
-              (write? where? scope/attribution?)        (4 dim × 3 stat)
-              ─────────  the mechanism (how)  ─────────  the harm (what)
-```
-
-For each of 1600 task we record (i) the 5-turn dialog the user uses to plant content, (ii) the resulting state snapshot of `USER.md` / `MEMORY.md` / `skills/*.md`, (iii) the 3-turn neutral query the agent then has to answer, and (iv) a 4-dim Likert judgment per query turn (sycophancy / carryover / epistemic_promotion / amplification). The leaderboard ranks frontier backbones by how badly their persistent commits pollute these neutral queries.
-
-**Two-axis stress design** (1600 task = 100 base × 4 user need × 4 dialog style):
-
-- **Axis A — User Need** (input content type): `personal_opinion` / `signed_memory` / `environment_fact` / `procedural_workflow`
-- **Axis B — Dialog Style** (temporal delivery): `all_at_once` / `progressive` / `drip` / `late_shock`
-
-Each task runs 5-turn persist dialog → snapshots agent state → 3-turn query dialog → judges every query turn on 4 Likert dimensions (sycophancy / carryover / epistemic_promotion / amplification). Aggregated per task as max@3, mean@3, positive_rate@3 (= 12 task-level numbers).
-
-This repo packages everything needed to reproduce the §4 analysis on **any machine that has Python and Internet access to OpenRouter**. No local GPU required — agent backbone and judge both go through OpenRouter.
+This repo packages all scripts + data needed for §4 reproduction. Runs on any machine with Python and Internet access to OpenRouter — **no local GPU required** (both the agent backbone and the judge go through OpenRouter).
 
 ---
 

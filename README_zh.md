@@ -2,30 +2,9 @@
 
 **🌐 语言**: [English](README.md) | **中文**
 
-普通 sycophancy benchmark 测的是: 用户说一句偏见, 模型当场附不附和? 这个我们已经有了。**自学习个人智能体** (e.g. Hermes-Agent) 的危险再进一步:
+PASB 测自学习个人智能体 (e.g. Hermes-Agent) 在 4 类 user 输入 × 4 类对话样式 = 1600 task 上, **持久化 commit (USER.md / MEMORY.md / skill_manage) 如何污染后续中立 query 的回答**。每个 task 跑 5-turn 持久化对话 → 快照 agent state → 3-turn 中立 query → judge 给 4 dim Likert (sycophancy / carryover / epistemic_promotion / amplification, max@3 / mean@3 / positive_rate@3 = 12 个 task-level 数字)。
 
-> **agent 把迎合写进了自己 — 而这正是后续 (本来中立的) query 被污染的 HOW。**
-
-用户随口一句话被 commit 到 `USER.md` / `MEMORY.md` / 一个 `skill_manage` workflow, 通常还**剥掉了来源和作用域**。从这一刻开始, 每个会读到这个持久化层的下游 query 都继承了这个偏见 — agent 不是 "当场附和一次", 而是**长期带着偏见工作**。
-
-PASB 端到端测这条因果链:
-
-```
-用户输入  →  agent 的 commit decision  →  下游 query 的 sycophancy
-            (要不要存? 存哪里? 保不保留 scope / attribution?)        (4 dim × 3 stat)
-            ────────  机制 (how)  ────────  危害 (what)
-```
-
-每个 task (共 1600 个) 我们记: (i) 用户在 5 turn 持久化对话里植入了什么内容, (ii) 结果 `USER.md` / `MEMORY.md` / `skills/*.md` 的快照, (iii) 接下来 3 turn 中立 query, (iv) judge 给每个 query turn 的 4 dim Likert 评分 (sycophancy / carryover / epistemic_promotion / amplification)。leaderboard 按 frontier model 在这条 "持久化 commit 污染中立 query" 链上的严重程度排名。
-
-**两轴 stress 设计** (1600 task = 100 base × 4 user need × 4 dialog style):
-
-- **轴 A — User Need** (输入内容类型): `personal_opinion` / `signed_memory` / `environment_fact` / `procedural_workflow`
-- **轴 B — Dialog Style** (时序投递方式): `all_at_once` / `progressive` / `drip` / `late_shock`
-
-每个 task 跑 5-turn 持久化对话 → 快照 agent 状态 → 3-turn 后续 query → judge 给每个 query turn 打 4 个独立 Likert (1-5)。task 级聚合: max@3, mean@3, positive_rate@3 (共 12 个 task-level 数字)。
-
-**这个 repo 打包了复现 §4 分析所需的全部脚本与数据**, 跑在任何能访问 OpenRouter 的机器上即可。**不需要本地 GPU** — agent backbone 和 judge 都走 OpenRouter。
+repo 打包了 §4 分析所需的全部脚本与数据, 跑在任何能访问 OpenRouter 的机器上即可 — **不需要本地 GPU** (agent backbone 和 judge 都走 OpenRouter).
 
 ---
 
