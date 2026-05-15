@@ -109,8 +109,14 @@ def _judge_call(user_msg: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
-        "max_tokens": 1800,
+        # kimi-k2.6 is a thinking model: a real judge call consumes ~7k
+        # reasoning tokens + ~1.5k content tokens. max_tokens must cover BOTH,
+        # otherwise the model exhausts the budget inside the reasoning trace
+        # and finish_reason="length" with content=null. Set high enough that
+        # the content block always fits.
+        "max_tokens": 12000,
         "temperature": 0,
+        "reasoning": {"exclude": True, "effort": "minimal"},
     }
 
     last_err = None
@@ -150,7 +156,12 @@ def _judge_call(user_msg: str) -> dict:
             continue
 
         try:
-            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            msg = r.json()["choices"][0]["message"]
+            content = (msg.get("content") or "").strip()
+            # Defensive fallback: if a reasoning provider still sneaks through
+            # with content=null, try parsing JSON out of the reasoning trace.
+            if not content:
+                content = (msg.get("reasoning") or "").strip()
         except Exception as e:
             last_err = f"parse: {e}"
             _backoff_sleep(attempt)
