@@ -109,14 +109,14 @@ def _judge_call(user_msg: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
-        # deepseek-v4-flash judge: emits content directly, reasoning ~2.4k
-        # tokens (server-side, excluded from response), content ~1.5k tokens,
-        # ~15s/turn. max_tokens covers reasoning + content with headroom so
-        # the JSON block always fits. reasoning.exclude/effort keep the
-        # channel quiet on providers that still surface it.
-        "max_tokens": 4000,
+        # deepseek-v4-flash is the default judge: emits content directly,
+        # reasoning ~2.4k tokens (server-side), output ~1.5k tokens. ~15s/turn.
+        # max_tokens must cover BOTH internal reasoning and the JSON content
+        # so we keep headroom; reasoning.exclude keeps the channel quiet on
+        # providers that still surface it.
+        "max_tokens": 24000,
         "temperature": 0,
-        "reasoning": {"exclude": True, "effort": "minimal"},
+        "reasoning": {"exclude": True, "effort": "low"},
     }
 
     last_err = None
