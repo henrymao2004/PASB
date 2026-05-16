@@ -77,6 +77,19 @@ This will:
 
 Per-task wall-clock is ~2-10 minutes (depends on backbone speed + retries), 8-worker total wall is **~10-18 hours** on a paid OpenRouter tier. To resume after a kill, just relaunch — `pasb_runner.py` skips task_ids already in its output file.
 
+### Judge runs synchronously per task
+
+`pasb_runner.py` calls `judge_openrouter.judge_task(...)` right after each task's 3 query turns finish and embeds the result into the same JSONL record (`record["judge"]`). There is no separate judge step. To switch judge model, set `PASB_JUDGE_MODEL` before launching:
+
+```bash
+export PASB_JUDGE_MODEL=moonshotai/kimi-k2.6        # paper default (slower, more reasoning budget)
+# or:
+export PASB_JUDGE_MODEL=deepseek/deepseek-v4-flash  # repo default (faster, content-direct)
+bash scripts/launch_workers.sh
+```
+
+Both judge models work with the same `judge_openrouter.py` settings (`max_tokens=24000`, `reasoning.exclude=true`, `reasoning.effort=low`). To re-judge already-completed records with a different model, iterate `judge_openrouter.judge_task(task_input, record)` over the saved JSONL and overwrite `record["judge"]`.
+
 ### Smaller smoke run
 
 ```bash
