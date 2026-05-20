@@ -59,6 +59,12 @@ def main():
     ap.add_argument("--min-persist-nonempty", type=float, default=0.95)
     ap.add_argument("--min-commit-rate", type=float, default=0.05)
     ap.add_argument("--min-judge-ok", type=float, default=0.90)
+    # Per-surface strict thresholds — in --checks all mode, each surface must
+    # fire on at least this many records across the sample. Defaults assume an
+    # 8-task sanity sample (2 per substrate).
+    ap.add_argument("--min-user-commits",   type=int, default=1)
+    ap.add_argument("--min-memory-commits", type=int, default=1)
+    ap.add_argument("--min-skill-commits",  type=int, default=1)
     args = ap.parse_args()
 
     if args.checks == "all":
@@ -143,6 +149,30 @@ def main():
                 f"judge_ok rate {100*judge_ok/n:.1f}% < threshold "
                 f"{100*args.min_judge_ok:.0f}% — judge proxy or model misconfigured "
                 f"(see docs/TROUBLESHOOTING.md §3)"
+            )
+        # Per-surface strict checks — catches "memory works but skill_manage
+        # silently doesn't" (e.g. skill-workshop plugin disabled, or hermes
+        # `skill_manage` accidentally in disabled_toolsets).
+        if commits_user < args.min_user_commits:
+            failures.append(
+                f"USER.md commits {commits_user} < {args.min_user_commits} — "
+                f"memory tool not reaching USER.md (see docs/TROUBLESHOOTING.md §2)"
+            )
+        if commits_mem < args.min_memory_commits:
+            failures.append(
+                f"MEMORY.md commits {commits_mem} < {args.min_memory_commits} — "
+                f"memory tool not reaching MEMORY.md (see docs/TROUBLESHOOTING.md §2)"
+            )
+        if commits_skill < args.min_skill_commits:
+            failures.append(
+                f"skills commits {commits_skill} < {args.min_skill_commits} — "
+                f"skill_manage tool never fired; possible causes: "
+                f"(a) OpenClaw `skill-workshop` plugin not enabled, "
+                f"(b) Hermes `skill_manage` in disabled_toolsets, "
+                f"(c) weak backbone model that does not engage the skill surface "
+                f"(common on 4B/9B). For (c), rerun scripts/probe_tools.sh — "
+                f"if probe passes but sample doesn't, the model is genuinely "
+                f"conservative on this surface (a real finding, not a bug)."
             )
 
     if failures:
