@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Launch N PASB workers in parallel against OpenRouter.
+# Launch N Hermes PASB workers in parallel against any backend configured in .env.
 #
 # Usage:
-#   scripts/launch_workers.sh             # all 1600 task, $PASB_NUM_WORKERS workers
-#   scripts/launch_workers.sh PRF         # PRF sub_axis only (512 task)
-#   scripts/launch_workers.sh ALL 8       # all task, force 8 workers
+#   scripts/launch_workers_hermes.sh             # all 1600 task, $PASB_NUM_WORKERS workers
+#   scripts/launch_workers_hermes.sh PRF         # PRF sub_axis only (512 task)
+#   scripts/launch_workers_hermes.sh ALL 8       # all task, force 8 workers
 #
-# Concurrency-safe vs OpenRouter rate limits:
+# Prerequisites:
+#   1. bash scripts/setup_hermes.sh <backend>    # installs ~/.hermes/config.yaml
+#   2. bash scripts/sanity_check.sh hermes       # validates pipeline end-to-end
+#
+# Concurrency-safe vs rate limits:
 #   - each worker gets a random 0-30s start jitter (--start-jitter 30)
-#   - per-call backoff (exp + jitter) is inside judge_openrouter.py + pasb_runner.py
+#   - per-call backoff (exp + jitter) inside judge_openrouter.py + pasb_runner.py
 #   - if you hit 429s, lower PASB_NUM_WORKERS in .env
 set -euo pipefail
 
@@ -21,8 +25,10 @@ if [[ -f .env ]]; then
   set -a; source .env; set +a
 fi
 
-if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
-  echo "ERROR: OPENROUTER_API_KEY not set. Create .env from config/env.template." >&2
+# Judge key is required regardless of backend (judge defaults to OpenRouter
+# unless PASB_JUDGE_BASE_URL is overridden).
+if [[ -z "${OPENROUTER_API_KEY:-}${PASB_JUDGE_API_KEY:-}" ]]; then
+  echo "ERROR: no judge API key (need OPENROUTER_API_KEY or PASB_JUDGE_API_KEY)." >&2
   exit 1
 fi
 
@@ -60,7 +66,7 @@ split -n "l/${N}" -d "$INPUT" /tmp/pasb_chunks/chunk_
 HERMES_TEMPLATE="${HOME}/.hermes"
 if [[ ! -f "${HERMES_TEMPLATE}/config.yaml" ]]; then
   echo "ERROR: ${HERMES_TEMPLATE}/config.yaml not found." >&2
-  echo "Run scripts/setup_hermes_config.sh first to install it from config/config.yaml.template." >&2
+  echo "Run scripts/setup_hermes.sh <backend> first." >&2
   exit 1
 fi
 

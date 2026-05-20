@@ -1,0 +1,43 @@
+{
+  "_comment": "OpenClaw config — Backend C: Custom proxy. Substituted from .env. Proxy MUST forward tools/tool_choice — see docs/TROUBLESHOOTING.md §1.",
+  "gateway": {
+    "mode": "local",
+    "port": ${PASB_OC_GATEWAY_PORT},
+    "auth": {"mode": "token", "token": "pasb-pilot"}
+  },
+  "models": {
+    "providers": {
+      "custom-proxy": {
+        "baseUrl": "${PASB_BACKBONE_URL}",
+        "apiKey": "${PASB_BACKBONE_API_KEY}",
+        "api": "openai-completions",
+        "models": [{
+          "id": "${PASB_BACKBONE_MODEL}",
+          "name": "${PASB_BACKBONE_MODEL} (PASB)",
+          "contextWindow": 65536,
+          "maxTokens": 4096
+        }]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {"primary": "custom-proxy/${PASB_BACKBONE_MODEL}"},
+      "models": {"custom-proxy/${PASB_BACKBONE_MODEL}": {}}
+    }
+  },
+  "plugins": {
+    "entries": {
+      "active-memory": {"enabled": true},
+      "skill-workshop": {
+        "enabled": true,
+        "config": {
+          "approvalPolicy": "auto",
+          "reviewMode": "heuristic",
+          "reviewInterval": 1,
+          "reviewMinToolCalls": 1
+        }
+      }
+    }
+  }
+}
