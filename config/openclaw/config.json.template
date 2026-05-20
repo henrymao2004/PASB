@@ -1,5 +1,5 @@
 {
-  "_comment": "OpenClaw config — Backend C: Custom proxy. Substituted from .env. Proxy MUST forward tools/tool_choice — see docs/TROUBLESHOOTING.md §1.",
+  "_comment": "OpenClaw config — Bytedance / closed-endpoint deployment. Proxy MUST forward tools/tool_choice (see examples/proxies/ and docs/TROUBLESHOOTING.md §1).",
   "gateway": {
     "mode": "local",
     "port": ${PASB_OC_GATEWAY_PORT},

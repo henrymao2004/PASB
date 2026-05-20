@@ -1,13 +1,6 @@
-# PASB custom-backend proxies
+# PASB proxies — bridging closed endpoints
 
-Use this when your model lives behind a closed endpoint (internal Azure deployment, Bytedance modelhub, Anthropic-on-Vertex, custom load balancer, ...) and your team needs PASB to route both agent and judge through that endpoint.
-
-## Why you may need a proxy at all
-
-Hermes-CLI and OpenClaw both speak the OpenAI `/v1/chat/completions` dialect. If your endpoint:
-
-- accepts OpenAI shape natively → **no proxy needed**, set `PASB_BACKBONE_URL` directly.
-- requires custom auth headers, routing tokens, or a domain-specific URL → a thin proxy is the easiest adapter.
+PASB talks the OpenAI `/v1/chat/completions` dialect. If your model lives behind a closed endpoint (Bytedance modelhub, internal Azure deployment, on-prem LLM gateway, Anthropic-on-Vertex, ...), run the proxy in `openai_compat_proxy.py` as a thin adapter between Hermes/OpenClaw and your upstream.
 
 ## The single most important rule
 
@@ -15,39 +8,39 @@ Hermes-CLI and OpenClaw both speak the OpenAI `/v1/chat/completions` dialect. If
 
 PASB measures the agent's commit decision. The agent can only commit when the upstream model sees the `tools: [...]` field in the chat completion request — that's where `memory()`, `skill_manage()`, etc. live. If the proxy drops those fields:
 
-- agent appears to reply normally (just plain text)
-- `state_after_persist` stays empty
-- judge sees nothing to grade → all dimensions return 1
-- benchmark silently degenerates into "single-turn text politeness"
+- the agent appears to reply normally (just plain text)
+- `state_after_persist` stays empty on every record
+- the judge sees nothing to grade → all dimensions return Likert 1
+- the benchmark silently degenerates into "single-turn text politeness"
 
-We hit this exact bug ourselves with Gemini-3.1-Pro via an internal Azure proxy: 0.3% commit rate on 1600 tasks. Five additional lines (a `tools` whitelist pass-through) brought it back to ~50%.
+We hit this exact bug with Gemini-3.1-Pro via an internal Azure proxy: 0.3% commit rate on 1600 tasks. Five additional lines (a `tools` whitelist pass-through) brought it back to ~50%.
 
 ## Files here
 
 | File | Purpose |
 |---|---|
-| `openai_compat_proxy.py` | Generic OpenAI → upstream proxy. Forwards `tools` / `tool_choice` and 10 other sampling fields. |
+| `openai_compat_proxy.py` | Generic OpenAI / Azure-OpenAI → upstream proxy. Forwards `tools` / `tool_choice` and 10 other sampling fields. Auto-selects AzureOpenAI client when `UPSTREAM_API_VERSION` is set, otherwise OpenAI client. |
 | `README.md` | This file. |
 
-## Quickstart
+## Run two instances: one for agent, one for judge
 
-### Agent path (e.g. Gemini behind Bytedance modelhub)
+### Agent path (e.g. Gemini-3.1-Pro via Bytedance modelhub)
 
 ```bash
-UPSTREAM_BASE_URL=https://aidp.example.com/api/...   \
-    UPSTREAM_API_KEY=$YOUR_TOKEN                     \
-    UPSTREAM_MODEL=gemini-3.1-p                      \
-    PROXY_PORT=8002                                  \
-    python examples/proxies/openai_compat_proxy.py &
+UPSTREAM_BASE_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl \
+    UPSTREAM_API_KEY=$YOUR_BYTEDANCE_TOKEN                                \
+    UPSTREAM_MODEL=gemini-3.1-p                                           \
+    UPSTREAM_API_VERSION=2024-03-01-preview                               \
+    PROXY_PORT=8002                                                       \
+    nohup python examples/proxies/openai_compat_proxy.py &
 ```
 
 Then in `.env`:
 
 ```bash
-PASB_BACKEND=custom_proxy
-PASB_BACKBONE_URL=http://localhost:8002/v1
 PASB_BACKBONE_MODEL=gemini-3.1-p
-PASB_BACKBONE_API_KEY=any-string
+PASB_BACKBONE_URL=http://localhost:8002/v1
+PASB_BACKBONE_API_KEY=any-string-the-proxy-doesnt-check
 ```
 
 ### Judge path (e.g. internal kimi-k2.5 deployment)
@@ -55,47 +48,44 @@ PASB_BACKBONE_API_KEY=any-string
 Run a second proxy on a different port. Judge does not need `tools`, but the same proxy will forward them as a no-op — no harm.
 
 ```bash
-UPSTREAM_BASE_URL=https://your-kimi-endpoint   \
-    UPSTREAM_API_KEY=$KIMI_TOKEN               \
-    UPSTREAM_MODEL=kimi-k2.5                   \
-    PROXY_PORT=8003                            \
-    python examples/proxies/openai_compat_proxy.py &
+UPSTREAM_BASE_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl \
+    UPSTREAM_API_KEY=$YOUR_BYTEDANCE_TOKEN                                \
+    UPSTREAM_MODEL=kimi-k2.5                                              \
+    UPSTREAM_API_VERSION=2024-03-01-preview                               \
+    PROXY_PORT=8003                                                       \
+    nohup python examples/proxies/openai_compat_proxy.py &
 ```
 
 Then in `.env`:
 
 ```bash
-PASB_JUDGE_BASE_URL=http://localhost:8003/v1
 PASB_JUDGE_MODEL=kimi-k2.5
-PASB_JUDGE_API_KEY=any-string
+PASB_JUDGE_BASE_URL=http://localhost:8003/v1
+PASB_JUDGE_API_KEY=any-string-the-proxy-doesnt-check
 ```
 
 ## Validation
 
-After starting your proxy and running `scripts/setup_hermes.sh custom_proxy` (or `setup_openclaw.sh`), **always run sanity_check before the 1600**:
+Both proxies running? Now (and only now) validate end-to-end:
 
 ```bash
-bash scripts/sanity_check.sh hermes   # or openclaw
+bash scripts/setup_hermes.sh
+bash scripts/sanity_check.sh hermes
 ```
 
-This runs 4 tasks (1 per substrate) and verifies:
+`sanity_check` runs 4 tasks (1 per substrate) and verifies:
 
 1. agent reply non-empty (rules out auth / network)
-2. `state_after_persist` non-empty on at least one task (rules out missing tools forwarding)
+2. at least one task committed to durable state (proves `tools` reached the upstream)
 3. judge returned valid JSON (rules out judge proxy / model misconfig)
-4. judge dims actually written into the record
+4. judge dims written into the record (rules out write/parse drops)
 
-If sanity_check passes, you can safely launch the 1600. If it fails, see `docs/TROUBLESHOOTING.md`.
+If sanity_check passes, you're safe to launch the full 1600. If not, see `docs/TROUBLESHOOTING.md`.
 
-## Adapting to your provider
+## Non-Azure upstreams
 
-`openai_compat_proxy.py` uses the OpenAI Python SDK by default. If your upstream is Azure-style:
+If your upstream is plain OpenAI-compatible (not Azure-style), omit `UPSTREAM_API_VERSION` and the proxy will use the `OpenAI(base_url=..., api_key=...)` client instead. Everything else stays the same.
 
-```python
-from openai import AzureOpenAI
-client = AzureOpenAI(api_key=..., azure_endpoint=..., api_version="2024-03-01-preview")
-```
+## Native-Gemini upstreams (NOT OpenAI-compatible)
 
-The rest of the proxy logic — especially the `_FORWARD_FIELDS` whitelist — stays unchanged.
-
-If your upstream requires a non-OpenAI body shape (e.g. Anthropic native), convert in `do_POST` and convert the response back, but **the `tools` semantic must survive the conversion**.
+If your upstream speaks Google's native `function_declarations` format instead of OpenAI `tools`, you need to convert in `do_POST` and convert the response back — but **the `tools` semantic must survive the conversion** end-to-end. The whitelist in `openai_compat_proxy.py` shows what to preserve.

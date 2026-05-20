@@ -1,37 +1,43 @@
 #!/usr/bin/env python3
-"""Reference OpenAI-compatible proxy for PASB internal/closed backends.
+"""Reference OpenAI-compatible proxy for PASB closed-endpoint deployments.
 
-Use this when your model is reachable only via an internal endpoint that
-doesn't speak the public OpenRouter / OpenAI dialect — e.g. Azure deployment,
-Bytedance modelhub, Anthropic internal — but accepts something OpenAI-shaped
-under the hood.
+Use this when your model is reachable only through an internal "Azure-style"
+endpoint (e.g. Bytedance modelhub, internal Azure deployment, on-prem LLM
+gateway). The proxy accepts the OpenAI `/v1/chat/completions` shape that
+Hermes-CLI / OpenClaw emit, and forwards to your upstream while preserving
+the load-bearing `tools` + `tool_choice` fields.
 
-PASB depends critically on `tools` + `tool_choice` being forwarded VERBATIM to
-the upstream model. The agent CANNOT commit anything to persistent state if
-the upstream model never sees the tool definitions, and the entire benchmark
+PASB depends critically on `tools` + `tool_choice` arriving intact at the
+upstream model. The agent CANNOT commit anything to persistent state if the
+model never sees the tool definitions, and the entire benchmark silently
 collapses to "single-turn polite text". Do not strip these fields.
 
-Same proxy can serve both the agent backbone (port 8002 for example) and the
-judge (e.g. an internal kimi-k2.5 deployment). Configure each downstream
-separately by overriding env vars when launching:
+The same proxy script can serve both the agent backbone (e.g. port 8002 with
+upstream=gemini-3.1-p) and the judge (e.g. port 8003 with upstream=kimi-k2.5).
+Launch two instances on different ports.
 
-  # Agent path
-  UPSTREAM_BASE_URL=https://your-azure-endpoint   UPSTREAM_API_KEY=...   \\
-      UPSTREAM_MODEL=gemini-3.1-p   PROXY_PORT=8002   python openai_compat_proxy.py
+------------------------------------------------------------
+Example: agent path (Gemini-3.1-Pro via Bytedance modelhub)
+------------------------------------------------------------
+  UPSTREAM_BASE_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl \
+      UPSTREAM_API_KEY=$YOUR_BYTEDANCE_TOKEN \
+      UPSTREAM_MODEL=gemini-3.1-p \
+      UPSTREAM_API_VERSION=2024-03-01-preview \
+      PROXY_PORT=8002 \
+      python examples/proxies/openai_compat_proxy.py
 
-  # Judge path (parallel proxy instance)
-  UPSTREAM_BASE_URL=https://your-kimi-endpoint   UPSTREAM_API_KEY=...   \\
-      UPSTREAM_MODEL=kimi-k2.5   PROXY_PORT=8003   python openai_compat_proxy.py
+------------------------------------------------------------
+Example: judge path (internal kimi-k2.5)
+------------------------------------------------------------
+  UPSTREAM_BASE_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl \
+      UPSTREAM_API_KEY=$YOUR_BYTEDANCE_TOKEN \
+      UPSTREAM_MODEL=kimi-k2.5 \
+      UPSTREAM_API_VERSION=2024-03-01-preview \
+      PROXY_PORT=8003 \
+      python examples/proxies/openai_compat_proxy.py
 
-Then in .env:
-  PASB_BACKEND=custom_proxy
-  PASB_BACKBONE_URL=http://localhost:8002/v1
-  PASB_BACKBONE_MODEL=gemini-3.1-p
-  PASB_BACKBONE_API_KEY=any-string
-
-  PASB_JUDGE_BASE_URL=http://localhost:8003/v1
-  PASB_JUDGE_MODEL=kimi-k2.5
-  PASB_JUDGE_API_KEY=any-string
+If your upstream is plain OpenAI-compatible (NOT Azure-style), set
+UPSTREAM_CLIENT=openai (default is azure when UPSTREAM_API_VERSION is set).
 """
 import json
 import logging
@@ -39,21 +45,28 @@ import os
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from openai import OpenAI  # swap to AzureOpenAI if your upstream is Azure-style
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
-UPSTREAM_BASE_URL = os.environ.get("UPSTREAM_BASE_URL", "https://api.openai.com/v1")
-UPSTREAM_API_KEY = os.environ.get("UPSTREAM_API_KEY", "")
-UPSTREAM_MODEL = os.environ.get("UPSTREAM_MODEL", "")
+UPSTREAM_BASE_URL = os.environ["UPSTREAM_BASE_URL"]
+UPSTREAM_API_KEY = os.environ["UPSTREAM_API_KEY"]
+UPSTREAM_MODEL = os.environ["UPSTREAM_MODEL"]
+UPSTREAM_API_VERSION = os.environ.get("UPSTREAM_API_VERSION", "")
+UPSTREAM_CLIENT = os.environ.get(
+    "UPSTREAM_CLIENT", "azure" if UPSTREAM_API_VERSION else "openai"
+).lower()
 PROXY_PORT = int(os.environ.get("PROXY_PORT", "8002"))
 
-if not UPSTREAM_API_KEY:
-    raise SystemExit("UPSTREAM_API_KEY env var is required")
-if not UPSTREAM_MODEL:
-    raise SystemExit("UPSTREAM_MODEL env var is required")
-
-client = OpenAI(api_key=UPSTREAM_API_KEY, base_url=UPSTREAM_BASE_URL)
+# Build SDK client (AzureOpenAI for Azure-style endpoints, OpenAI otherwise).
+if UPSTREAM_CLIENT == "azure":
+    from openai import AzureOpenAI
+    client = AzureOpenAI(
+        api_key=UPSTREAM_API_KEY,
+        azure_endpoint=UPSTREAM_BASE_URL,
+        api_version=UPSTREAM_API_VERSION or "2024-03-01-preview",
+    )
+else:
+    from openai import OpenAI
+    client = OpenAI(api_key=UPSTREAM_API_KEY, base_url=UPSTREAM_BASE_URL)
 
 # Whitelist of OpenAI-API fields forwarded verbatim. PASB-critical: tools, tool_choice.
 _FORWARD_FIELDS = (
@@ -110,8 +123,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "extra_headers": {"X-PASB-Trace": str(uuid.uuid4())},
         }
         # PASB-critical: forward tools / tool_choice. Without these the upstream
-        # model never sees the agent's function declarations and commit pipeline
-        # silently fails.
+        # model never sees the agent's function declarations and the commit
+        # pipeline silently fails.
         for k in _FORWARD_FIELDS:
             if k in req and req[k] is not None:
                 kwargs[k] = req[k]
@@ -149,6 +162,7 @@ class ReusableTCPServer(ThreadingHTTPServer):
 
 
 if __name__ == "__main__":
-    print(f"openai_compat_proxy upstream={UPSTREAM_BASE_URL} model={UPSTREAM_MODEL} "
+    print(f"openai_compat_proxy upstream={UPSTREAM_BASE_URL} "
+          f"client={UPSTREAM_CLIENT} model={UPSTREAM_MODEL} "
           f"listening on :{PROXY_PORT}")
     ReusableTCPServer(("", PROXY_PORT), ProxyHandler).serve_forever()

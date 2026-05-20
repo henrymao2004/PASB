@@ -7,7 +7,7 @@
 #   scripts/launch_workers_openclaw.sh ALL 8       # force 8 workers
 #
 # Prerequisites:
-#   1. bash scripts/setup_openclaw.sh <backend>
+#   1. bash scripts/setup_openclaw.sh
 #   2. bash scripts/sanity_check.sh openclaw
 set -euo pipefail
 

@@ -1,0 +1,36 @@
+# Hermes-Agent config — Bytedance / closed-endpoint deployment.
+# Substituted from .env via `bash scripts/setup_hermes.sh`.
+#
+# Pre-req: launch the agent-side proxy described in examples/proxies/README.md.
+# The proxy MUST forward `tools` + `tool_choice` to your upstream — without
+# this PASB silently produces empty state_after_persist on every record.
+# See docs/TROUBLESHOOTING.md §1 for diagnosis.
+
+memory:
+  provider: local
+
+model:
+  default: ${PASB_BACKBONE_MODEL}
+  provider: custom
+  base_url: ${PASB_BACKBONE_URL}
+  api_key: ${PASB_BACKBONE_API_KEY}
+
+skills:
+  creation_nudge_interval: 1
+
+agent:
+  disabled_toolsets:
+    - web
+    - browser
+    - terminal
+    - file
+    - code_execution
+    - vision
+    - image_gen
+    - tts
+    - todo
+    - clarify
+    - delegation
+    - cronjob
+    - messaging
+    - computer_use

@@ -2,7 +2,7 @@
 
 OpenClaw is the second agent path. It's a JS-based scaffold (CLI + local gateway + plugin registry). Tool registration is **explicit** — `memory` and `skill_manage` exist only if the corresponding plugins are loaded.
 
-## Install
+## Install OpenClaw
 
 ```bash
 # Node 20+ required
@@ -16,7 +16,7 @@ openclaw --help
 openclaw plugins list | grep -E 'active-memory|skill-workshop'
 ```
 
-If `active-memory` or `skill-workshop` is missing, install them:
+If `active-memory` or `skill-workshop` is missing:
 
 ```bash
 openclaw plugins install active-memory
@@ -27,8 +27,9 @@ openclaw plugins install skill-workshop
 
 ```bash
 cp config/env.template .env
-# Edit .env — PASB_BACKEND + backbone vars as in HERMES.md
-bash scripts/setup_openclaw.sh openrouter
+# Edit .env — set PASB_BACKBONE_MODEL + PASB_BACKBONE_URL (your proxy)
+
+bash scripts/setup_openclaw.sh
 ```
 
 Unlike Hermes, OpenClaw config is **built per-worker at runtime** by

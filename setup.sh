@@ -26,9 +26,8 @@ echo "                      pip install hermes-agent      # or build from source
 echo
 echo "  OpenClaw:           npm install -g openclaw       # Node 20+ required"
 echo
-echo "Then:"
-echo "  bash scripts/setup_hermes.sh   <backend>     # or setup_openclaw.sh"
-echo "  bash scripts/sanity_check.sh   hermes        # or openclaw  (REQUIRED before 1600)"
-echo "  bash scripts/launch_workers_hermes.sh        # or launch_workers_openclaw.sh"
-echo
-echo "Backends: openrouter | vllm_local | custom_proxy  (see docs/BACKENDS.md)"
+echo "Then launch your agent + judge proxy (see examples/proxies/README.md),"
+echo "and run:"
+echo "  bash scripts/setup_hermes.sh     # or setup_openclaw.sh"
+echo "  bash scripts/sanity_check.sh hermes   # or openclaw  (REQUIRED before 1600)"
+echo "  bash scripts/launch_workers_hermes.sh # or launch_workers_openclaw.sh"

@@ -1,24 +1,13 @@
 # Running PASB with Hermes-Agent
 
-Hermes-Agent (from Nous Research) is the default reference agent. This is the simpler path: one shell command (`hermes -z`) per turn, all tool registration handled inside the CLI binary.
+Hermes-Agent (from Nous Research) is the default reference agent. One shell command (`hermes -z`) per turn, all tool registration handled inside the CLI binary.
 
-## Install
-
-```bash
-git clone https://github.com/henrymao2004/PASB.git
-cd PASB
-pip install -r requirements.txt
-```
-
-Then install hermes-CLI separately (one-time):
+## Install Hermes-CLI
 
 ```bash
-# Option 1: from the official repo
+# From the official repo
 git clone https://github.com/NousResearch/hermes-agent
 cd hermes-agent && pip install -e . && cd ..
-
-# Option 2: from pip if available
-pip install hermes-agent
 
 # Verify
 which hermes
@@ -29,12 +18,12 @@ hermes --help
 
 ```bash
 cp config/env.template .env
-# Edit .env — set PASB_BACKEND to one of openrouter | vllm_local | custom_proxy
-# Fill in OPENROUTER_API_KEY + PASB_BACKBONE_MODEL (or the equivalent vars
-# for vllm_local / custom_proxy).
+# Edit .env — set PASB_BACKBONE_MODEL + PASB_BACKBONE_URL (your proxy) + PASB_BACKBONE_API_KEY
 
-bash scripts/setup_hermes.sh openrouter      # writes ~/.hermes/config.yaml
+bash scripts/setup_hermes.sh           # writes ~/.hermes/config.yaml from template
 ```
+
+The Hermes config points at your local proxy (see `examples/proxies/README.md` for how to launch the proxy). PASB never talks to the upstream LLM directly.
 
 ## Validate before launch (REQUIRED)
 
@@ -61,7 +50,7 @@ Outputs are appended to `runs/ALL_w{0..N-1}.jsonl`. Per-worker logs in `runs/ALL
 
 ## Resume
 
-Workers skip task_ids already present in their output file, so killing and re-launching is safe:
+Workers skip task_ids already in their output file, so killing and re-launching is safe:
 
 ```bash
 pkill -f pasb_runner.py
@@ -75,7 +64,7 @@ Hermes-CLI has a **built-in toolset registry**. All the PASB-relevant tools
 are on by default. Config controls **only the blacklist**:
 
 ```yaml
-# config/hermes/openrouter.yaml.template (rendered to ~/.hermes/config.yaml)
+# config/hermes/config.yaml.template (rendered to ~/.hermes/config.yaml)
 agent:
   disabled_toolsets:
     - web
@@ -84,7 +73,6 @@ agent:
     # ... never add memory or skill_manage here.
 ```
 
-If you ever see a sanity_check fail at stage 2 (commit pipeline) on a default
-config, the most likely cause is your backbone backend (vllm or proxy)
-silently dropping the `tools` field — see `docs/TROUBLESHOOTING.md` §1, not
-this config.
+If sanity_check stage 2 (commit pipeline) fails on a default config, the most
+likely cause is your proxy silently dropping the `tools` field — see
+`docs/TROUBLESHOOTING.md` §1, not this config.
