@@ -7,7 +7,7 @@
 #   scripts/launch_workers_hermes.sh ALL 8       # all task, force 8 workers
 #
 # Prerequisites:
-#   1. bash scripts/setup_hermes.sh <backend>    # installs ~/.hermes/config.yaml
+#   1. bash scripts/setup_hermes.sh    # installs ~/.hermes/config.yaml
 #   2. bash scripts/sanity_check.sh hermes       # validates pipeline end-to-end
 #
 # Concurrency-safe vs rate limits:
@@ -66,7 +66,7 @@ split -n "l/${N}" -d "$INPUT" /tmp/pasb_chunks/chunk_
 HERMES_TEMPLATE="${HOME}/.hermes"
 if [[ ! -f "${HERMES_TEMPLATE}/config.yaml" ]]; then
   echo "ERROR: ${HERMES_TEMPLATE}/config.yaml not found." >&2
-  echo "Run scripts/setup_hermes.sh <backend> first." >&2
+  echo "Run scripts/setup_hermes.sh first." >&2
   exit 1
 fi
 

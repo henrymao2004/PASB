@@ -8,15 +8,12 @@
 
 **Likely causes**:
 
-1. **Backbone backend down or auth failure**
-   - vLLM not actually serving? `curl http://localhost:8000/v1/models`
-   - Wrong API key? Check `~/.hermes/config.yaml` (Hermes) or `~/.openclaw/openclaw.example.json`
-   - 429 rate limit storms: lower `PASB_NUM_WORKERS` and rerun
+1. **Proxy down or upstream auth failure**
+   - Proxy not actually serving? `curl http://localhost:8002/v1/models`
+   - Wrong upstream API key / endpoint? Check the proxy's own startup log.
+   - 429 rate limit storms: lower `PASB_NUM_WORKERS` and rerun.
 
-2. **vLLM launched without tool-call flags** (this also surfaces as stage 2 failure but stage 1 catches some cases)
-   - Add `--enable-auto-tool-choice` and `--tool-call-parser <parser>` to vLLM launch. See `docs/BACKENDS.md`.
-
-3. **Custom proxy 400/500**
+2. **Proxy returning 400 / 500 on every request**
    - Tail the proxy's own log. Most common: `tools` schema rejected upstream (try removing `parallel_tool_calls` first, then `response_format`).
 
 ## Stage 2 — `state_after_persist` is empty / commit rate < 5%
