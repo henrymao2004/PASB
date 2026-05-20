@@ -16,8 +16,10 @@ from pathlib import Path
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=1,
-                    help="tasks per substrate (--balanced) OR total (--no-balanced)")
+    ap.add_argument("--n", type=int, default=2,
+                    help="tasks per substrate (--balanced) OR total (--no-balanced). "
+                         "Default 2 gives sanity_check 8 tasks total — enough headroom "
+                         "for per-surface strict checks.")
     ap.add_argument("--balanced", action="store_true", default=True)
     ap.add_argument("--no-balanced", dest="balanced", action="store_false")
     ap.add_argument("--src-glob", default="data/tasks_*.jsonl",

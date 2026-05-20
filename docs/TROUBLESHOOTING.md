@@ -22,6 +22,10 @@
 
 **Root cause**: the `tools` field is being dropped somewhere between Hermes/OpenClaw and the actual model. The model never sees the function declarations, so it cannot emit `tool_calls`.
 
+**Faster diagnosis**: run `bash scripts/probe_tools.sh <agent>`. It sends three explicit "use this tool NOW" prompts and reports per-tool fire / no-fire. This isolates the broken pipeline stage in <1 minute without running any benchmark task.
+
+If one specific tool fires but another doesn't (e.g. `memory()` works but `skill_manage()` doesn't), the proxy is forwarding `tools` correctly — the broken piece is upstream (toolset blacklist, plugin missing, etc.). If neither fires, the proxy is dropping `tools`.
+
 **Diagnosis chain (top-down)**:
 
 1. **Hermes agent config doesn't disable critical toolsets**
