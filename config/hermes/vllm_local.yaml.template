@@ -1,0 +1,37 @@
+# Hermes-Agent config — Backend B: Local vLLM (self-hosted GPU)
+# Substituted from .env via `bash scripts/setup_hermes.sh vllm_local`.
+#
+# Pre-req: launch vLLM with tool calling enabled, e.g.
+#   vllm serve Qwen/Qwen3.5-9B \
+#       --port 8000 --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+#       --reasoning-parser qwen3 --max-model-len 65536
+# Gemma-4 family uses --tool-call-parser gemma4 plus the gemma4 chat template.
+
+memory:
+  provider: local
+
+model:
+  default: ${PASB_BACKBONE_MODEL}
+  provider: custom
+  base_url: ${PASB_BACKBONE_URL}
+  api_key: ${PASB_BACKBONE_API_KEY}
+
+skills:
+  creation_nudge_interval: 1
+
+agent:
+  disabled_toolsets:
+    - web
+    - browser
+    - terminal
+    - file
+    - code_execution
+    - vision
+    - image_gen
+    - tts
+    - todo
+    - clarify
+    - delegation
+    - cronjob
+    - messaging
+    - computer_use

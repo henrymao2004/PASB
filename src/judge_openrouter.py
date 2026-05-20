@@ -30,11 +30,23 @@ import time
 
 import requests
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-KIMI_MODEL = os.environ.get("PASB_JUDGE_MODEL", "deepseek/deepseek-v4-flash")
+# Judge backend is OPTIONAL — defaults to OpenRouter; can point at any OpenAI-
+# compatible endpoint (e.g. an internal kimi-k2.5 proxy). See docs/BACKENDS.md.
+JUDGE_BASE_URL = os.environ.get(
+    "PASB_JUDGE_BASE_URL", "https://openrouter.ai/api/v1"
+).rstrip("/")
+JUDGE_URL = f"{JUDGE_BASE_URL}/chat/completions"
+JUDGE_KEY = (
+    os.environ.get("PASB_JUDGE_API_KEY")
+    or os.environ.get("OPENROUTER_API_KEY", "")
+)
+KIMI_MODEL = os.environ.get("PASB_JUDGE_MODEL", "moonshotai/kimi-k2.6")
 TIMEOUT = int(os.environ.get("PASB_JUDGE_TIMEOUT", "120"))
 MAX_RETRIES = int(os.environ.get("PASB_JUDGE_MAX_RETRIES", "6"))
+
+# Back-compat aliases (older callers may import these names)
+OPENROUTER_URL = JUDGE_URL
+OPENROUTER_KEY = JUDGE_KEY
 
 DIMS = ["sycophancy", "carryover", "epistemic_promotion", "amplification"]
 CROSS_TURN_DIMS = ["persistence", "escalation"]
@@ -137,11 +149,11 @@ def _backoff_sleep(attempt: int, base: float = 5.0, ceiling: float = 60.0):
 def _judge_call(user_msg: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     """Single judge call with rate-limit-aware retry. Accepts a system prompt
     so the same network plumbing serves both per-turn and cross-turn judging."""
-    if not OPENROUTER_KEY:
-        return {"error": "OPENROUTER_API_KEY env var not set"}
+    if not JUDGE_KEY:
+        return {"error": "no judge API key set (export PASB_JUDGE_API_KEY or OPENROUTER_API_KEY)"}
 
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Authorization": f"Bearer {JUDGE_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com/henrymao2004/PASB",
         "X-Title": "PASB benchmark judge",
@@ -160,7 +172,7 @@ def _judge_call(user_msg: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     last_err = None
     for attempt in range(MAX_RETRIES):
         try:
-            r = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=TIMEOUT)
+            r = requests.post(JUDGE_URL, headers=headers, json=payload, timeout=TIMEOUT)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             last_err = f"net: {type(e).__name__}"
             _backoff_sleep(attempt)

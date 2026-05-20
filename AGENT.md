@@ -1,284 +1,134 @@
-# AGENT.md — guide for AI coding assistants working in this repo
+# Agent guide — PASB internals
 
-This file documents the conventions, invariants, and gotchas an AI assistant (Claude Code / Cursor / Codex / etc.) needs to safely modify this repo. Read this **before** making any non-trivial change.
+This document is for someone modifying PASB code. For setup/run instructions see `README.md` and `docs/`.
 
----
+## Scope
 
-## What this repo does, in one paragraph
+This repo is **task runner + judge only**. Anything that aggregates results,
+produces leaderboard rows, or compares cells across runs lives in your own
+analysis scripts — not here. The output is JSONL records; what you do with
+them is downstream.
 
-PASB is a benchmark that measures whether a self-evolving personal agent **writes user-planted content into its persistent memory / skill store and then reuses it as fact**. Each of the 1600 task runs the agent (Hermes-Agent CLI, with an OpenAI-compatible OpenRouter backbone) through a 5-turn "persist" dialog, snapshots `USER.md` / `MEMORY.md` / `skills/*.md`, then runs a 3-turn "query" dialog, and judges every query turn on 4 independent 1-5 Likert scales (sycophancy / carryover / epistemic_promotion / amplification). The judge is `moonshotai/kimi-k2.6` over OpenRouter. Output is one JSONL line per task.
+## One task lifecycle
 
----
-
-## Architecture in 30 seconds
-
-```
-data/tasks_*.jsonl                  pre-built 1600 task pool
-        │
-        ▼
-scripts/launch_workers.sh           splits → N chunks, spawns N detached workers
-        │
-        ▼ (N processes)
-src/pasb_runner.py                  per task: reset $HERMES_HOME → 5 persist turns →
-        │                           snapshot state → 3 query turns → judge → JSONL append
-        │
-        ├── calls `hermes` CLI ────────────► OpenRouter (backbone, e.g. deepseek-v4-pro)
-        │       (reads ~/.hermes/config.yaml)
-        │
-        └── src/judge_openrouter.py ──────► OpenRouter (judge: kimi-k2.6)
-        │
-        ▼
-runs/<RUN>_w{i}.jsonl               per-worker results
-        │
-        ▼
-scripts/concat_results.sh           dedup by task_id
-        │
-        ▼
-src/analyze_section4.py             reproduce 6 §4 findings
-```
-
-The agent backbone and the judge **both** go through OpenRouter and **both** use the same `OPENROUTER_API_KEY`.
-
----
-
-## Critical invariants — do not violate
-
-1. **One worker = one `$HERMES_HOME` dir**. Hermes-CLI writes `memories/USER.md`, `memories/MEMORY.md`, `skills/*/SKILL.md` under `$HERMES_HOME`. If two workers share a home dir they trash each other's persistence state and the benchmark is invalid. `scripts/launch_workers.sh` enforces `/tmp/pasb_workers/w{i}/` per worker — don't change this.
-
-2. **Reset between tasks**. `pasb_runner.reset(home)` deletes `memories/`, `skills/`, `sessions/` at the start of every task. This is required: PASB measures per-task sycophancy with a clean slate. Never skip the reset or batch-process tasks without it.
-
-3. **Snapshot order matters**. Snapshot happens **after** `SLEEP_AFTER_PERSIST` (default 15s), to let hermes' background curator flush. If you reduce the sleep below 5s, expect missing state writes on slower curators.
-
-4. **Judge needs `state_after_persist`**. The judge prompt includes the full memory snapshot — it cannot decide sycophancy without seeing what got committed. Do not strip `state_after_persist` from the record before judging.
-
-5. **`judge_ok` is the validity flag**. A task counts only if all 3 query turns produced valid 1-5 Likert. `analyze_section4.py` filters on `r["judge"]["judge_ok"] is True`. Records with API failures stay in the JSONL but are excluded from analysis.
-
-6. **Resume safety**. `pasb_runner.py` reads the output JSONL on startup and skips any `task_id` already present. To re-run a task, delete its line from the output file (not the whole file). Never truncate output files mid-run.
-
----
-
-## Data conventions
-
-### Task ID format
+Both `src/pasb_runner.py` (Hermes) and `src/pasb_runner_openclaw.py` (OpenClaw)
+implement the same 7-step lifecycle:
 
 ```
-PASB-{SUB_AXIS}-{NNNN}__{substrate}__{progression}
-e.g. PASB-PRF-0001__user_belief__progressive
+1. reset worker workspace (memories, skills, sessions)
+2. persist phase  : 5 turns of `agent <prompt> --yolo`
+3. sleep SLEEP_AFTER_PERSIST (let auto-memory / curator settle)
+4. snapshot workspace → state_after_persist = {USER.md, MEMORY.md, skills/*}
+5. query phase    : 3 turns of `agent <prompt> --yolo`
+6. judge per query turn (4 dim Likert) + 1 cross-turn call (2 dim)
+7. write one JSONL line
 ```
 
-- `SUB_AXIS` ∈ {`PRF`, `CDL`, `SOC`} — stimulus class (sycophancy / cross-domain / social camouflage). The original `BEN` (beneficial) slot was retired in v8 and its 16 base items were reallocated to `SOC`; legacy v7 result tables that still reference `BEN` remain in `FINAL_PROPOSAL.md` for historical comparison.
-- `NNNN` — base item index
-- `substrate` ∈ {`user_belief`, `attributed_memory`, `unattributed_fact`, `skill_snippet`} (legacy names in JSONL files)
-- `progression` ∈ {`all_at_once`, `progressive`, `drip`, `late_shock`}
+Workers are **resumable**: tasks whose `task_id` is already in the output file
+are skipped on relaunch. Crash mid-run? Just `pkill` and re-launch the same
+script.
 
-### Scenario rename — IMPORTANT
+## Output record schema
 
-Paper-facing scenario names are different from JSONL `substrate` field:
-
-| Paper name (current) | JSONL `substrate` (legacy) |
-|---|---|
-| `personal_opinion` | `user_belief` |
-| `signed_memory` | `attributed_memory` |
-| `environment_fact` | `unattributed_fact` |
-| `procedural_workflow` | `skill_snippet` |
-
-The `NORM` dict at the top of each analysis function in `src/analyze_section4.py` handles this mapping. **Do not rename `substrate` in the data files** — too much downstream depends on the legacy names. Always do the rename at analysis-time.
-
-### Task record schema (one JSONL line per task)
-
-```python
+```json
 {
-  "task_id": str,                          # see format above
-  "base_item_id": str,                     # PASB-PRF-0001 (no variant suffix)
-  "sub_axis": "PRF" | "CDL" | "SOC",
-  "substrate": legacy_substrate_name,
-  "progression": "all_at_once" | "progressive" | "drip" | "late_shock",
-  "trigger": {
-    "claim": str,                          # the planted user content
-    "domain": str,
-    "ground_truth_stance": str,            # what a non-sycophantic agent should say
-  },
-  "persist": [                             # 5 turns
-    {"turn": 1, "user": str, "agent": str, "stderr": str, "elapsed": float, "ret": int},
-    ...
-  ],
+  "task_id": "PASB-PRF-0001__user_belief__progressive",
+  "base_item_id": "PASB-PRF-0001",
+  "sub_axis": "PRF",
+  "substrate": "user_belief",
+  "progression": "progressive",
+  "trigger": {"claim": "...", "domain": "...", "ground_truth_stance": "..."},
+
+  "persist":  [{"turn": 1, "user": "...", "agent": "...", "elapsed": 12.3, "ret": 0}, ...],
+  // OpenClaw uses `agent_persist_outputs` instead of `persist`; see judge_oc_adapter.py
+
   "state_after_persist": {
-    "memories/USER.md": str,               # post-persist snapshot
-    "memories/MEMORY.md": str,
-    "skills": {"<rel_path>": str, ...},
+    "memories/USER.md":   "...",          // Hermes path
+    "memories/MEMORY.md": "...",
+    "skills": {"<name>/SKILL.md": "..."}
   },
-  "query": [                               # 3 turns (q1 + 2 follow-up)
-    {"turn": 1, "user": str, "agent": str, ...},
-    ...
-  ],
-  "completed_at": float,                   # unix ts
+
+  "query": [{"turn": 1, "user": "...", "agent": "..."}, ...],
+
   "judge": {
-    "judgments": [
-      {"turn": 1, "judgment": {...full 6-step + 4 likert...},
-       "sycophancy_likert": int,           # clamped to [1,5] or -1 if invalid
-       "carryover_likert": int,
-       "epistemic_promotion_likert": int,
-       "amplification_likert": int},
-      ...3 entries...
-    ],
-    "judge_ok": bool,                      # True iff all 3 turns produced valid Likert
-    "task_sycophancy_max": int | None,     # max over (q1, q2, q3); None if judge_ok=False
-    "task_sycophancy_mean": float | None,
-    "task_sycophancy_positive_rate": float | None,
-    "task_carryover_max": ...,
-    "task_carryover_mean": ...,
-    "task_carryover_positive_rate": ...,
-    "task_epistemic_promotion_max": ...,
-    ... (12 task-level metrics total = 4 dim × 3 stat)
-  }
+    "judge_ok": true,
+    "judgments": [{"turn": 1, "sycophancy_likert": 1, ...}, ...],
+    "cross_turn_judgment": {"persistence_likert": 2, "escalation_likert": 1, ...},
+    "task_sycophancy_max": 1, "task_carryover_max": 1, "task_epistemic_promotion_max": 1, "task_amplification_max": 1,
+    "task_persistence_likert": 2, "task_persistence_FR": false,
+    "task_escalation_likert": 1,  "task_escalation_FR": false
+  },
+
+  "completed_at": 1779200000.0
 }
 ```
 
-### `commit_location` derivation rule
+## Tool registration — the load-bearing assumption
 
-Used in §4.5 dose-response analysis. Order matters — priority is skill > MEMORY > USER > session:
+PASB measures the agent's **commit decision**. The agent can only commit when
+the upstream LLM sees `tools: [...]` in the chat completion request. Tool
+sources:
 
-```python
-def commit_location(r):
-    st = r["state_after_persist"]
-    if st.get("skills"): return "skill_manage"
-    if (st.get("memories/MEMORY.md") or "").strip(): return "MEMORY.md"
-    if (st.get("memories/USER.md") or "").strip(): return "USER.md"
-    return "session-only"
-```
-
-Do not change this priority order — published §4.5 numbers depend on it.
-
----
-
-## How to run things
-
-### Setup on a fresh machine
-
-```bash
-bash setup.sh                              # pip deps + hermes-CLI install + .env creation
-# then edit .env to set OPENROUTER_API_KEY
-bash scripts/setup_hermes_config.sh        # installs ~/.hermes/config.yaml
-hermes -z 'hello' --yolo                   # smoke test (should return a reply)
-```
-
-### Smoke run (10 task, single worker)
-
-```bash
-python src/pasb_runner.py \
-    --in data/tasks_PRF.jsonl \
-    --out runs/smoke.jsonl \
-    --hermes-home /tmp/hermes_smoke \
-    --limit 10
-```
-
-### Full run (1600 task, $PASB_NUM_WORKERS in parallel)
-
-```bash
-bash scripts/launch_workers.sh             # detached, writes runs/ALL_w{i}.{log,jsonl}
-```
-
-### Analyze
-
-```bash
-bash scripts/concat_results.sh runs/ALL_w*.jsonl > runs/ALL_merged.jsonl
-python src/analyze_section4.py runs/ALL_merged.jsonl
-```
-
-### Switch backbone model
-
-```bash
-# Edit .env: PASB_BACKBONE_MODEL=openai/gpt-5.5
-bash scripts/setup_hermes_config.sh        # regenerate ~/.hermes/config.yaml
-rm -rf /tmp/pasb_workers                   # clean stale worker $HERMES_HOME
-bash scripts/launch_workers.sh             # rerun
-```
-
----
-
-## Concurrency safety — what's already built
-
-OpenRouter rate-limits **per account**, not per worker. The code is hardened for shared-quota concurrency:
-
-| Layer | Mechanism |
-|---|---|
-| Worker start | `--start-jitter 30` injects 0-30s random delay before first call (prevents N workers all hitting OpenRouter on the same second). |
-| `judge_openrouter._judge_call` | Exponential backoff 5→60s with jitter, honors `Retry-After`, separate base for 429 (10→120s). Up to `PASB_JUDGE_MAX_RETRIES` (default 6). |
-| `pasb_runner.hermes_turn` | Detects empty / "API call failed" / "Connection error" / "rate limit" in hermes stdout, exponential retry (base 10s, max 120s, jitter, up to 10 attempts). |
-| `pasb_runner.backend_healthy` | Polls `https://openrouter.ai/api/v1/models` between failed turns; waits up to 20 min for backend to recover. |
-
-**Knob to dial under 429 storms**: lower `PASB_NUM_WORKERS` in `.env` and relaunch. Partial output is preserved.
-
----
-
-## Common pitfalls (real bugs we hit)
-
-### Pitfall 1: `pgrep -f <pattern>` matches itself
-
-`pgrep -af 'vllm_keeper'` inside a bash command whose argv contains the literal string `vllm_keeper` will match the bash wrapper too. If you then kill those PIDs you kill your own shell (and disconnect SSH mid-script). Use explicit PIDs from a prior snapshot, or anchor the pattern (`^/bin/bash ./vllm_keeper`).
-
-### Pitfall 2: pasb_runner sleep was tuned for Hermes-4.3
-
-`PASB_SLEEP_AFTER_PERSIST=30` was needed for one specific backbone (NousResearch Hermes-4.3-36B has a slow curator). For DeepSeek / GPT / Claude / Gemini, 15s is plenty. Don't bump it higher just to be "safe" — it adds 15s × 1600 = 6.7 hr of pure sleep time.
-
-### Pitfall 3: Don't conflate scenario and sub_axis
-
-- `sub_axis` (PRF / CDL / SOC) is the **stimulus class** — what category of content is planted.
-- `substrate` / scenario (`user_belief` etc.) is the **input form** — how the user expresses it.
-
-These are **orthogonal axes**. Don't merge them. §4.1.5 / §4.2 keep them separate; §4.3 (progression) and §4.4 (CDL boundary case) only look at one at a time.
-
-### Pitfall 4: `judge_kimi.py` is the OLD judge
-
-If you see references to `judge_kimi` (Bailian endpoint) — that's the legacy code from the original server setup. **This repo uses `judge_openrouter.py` only**. The `import judge_kimi` line in `pasb_runner.py` was replaced with `import judge_openrouter`. Don't reintroduce the Bailian dependency.
-
-### Pitfall 5: 100 base items are split across two files per sub_axis
-
-- `data/tasks_PRF.jsonl` = first 32 base × 16 variant = 512 task (original 50 base item set)
-- `data/tasks_PRF_2.jsonl` = next 32 base × 16 variant = 512 task (v7.5 extension, brings total to 100 base)
-
-For the **full 1600 task PASB run**, the launcher uses only the `tasks_*.jsonl` files (without `_2` suffix) = 1600 task. The `_2.jsonl` files are an additional 800 task extension that brings the total pool to 2400. **Don't accidentally concat both** — you'll get duplicate task_ids.
-
-### Pitfall 6: `state_after_persist` has a weird "Working directory: ..." record sometimes
-
-For some tasks, hermes-CLI writes its own bootstrap text into `memories/MEMORY.md` (e.g. "Working directory: /home/..."). This is **not** a user-planted content commit, it's an artifact of CLI startup. The judge correctly ignores it (it looks for `trigger.claim` content, not arbitrary text). Don't filter it out at write time.
-
----
-
-## Modifying core files — what changes are safe
-
-| File | Safe to modify | Don't touch |
+| Path | Tool source | How to enable/disable |
 |---|---|---|
-| `data/tasks_*.jsonl` | Add new entries; never delete or rename existing task_id. | Field names (downstream depends on them). |
-| `src/pasb_runner.py` | Add retry logic, new env vars, logging. | The `state_after_persist` snapshot shape; the JSONL output schema. |
-| `src/judge_openrouter.py` | Change `KIMI_MODEL` env var, retry knobs. | `SYSTEM_PROMPT` (= JUDGE_SPEC v6, locked) or `DIMS` list or `_clamp_likert`. |
-| `src/analyze_section4.py` | Add new findings, new tables. | The 6 existing finding functions' output shape — paper tables ref these. |
-| `scripts/launch_workers.sh` | Add knobs, change chunk count. | Per-worker `$HERMES_HOME` isolation. |
-| `config/config.yaml.template` | Add new disabled toolsets. | The `memory.provider: local` line (PASB requires local persistence to snapshot). |
+| Hermes | built-in toolset registry (closed-source binary) | `agent.disabled_toolsets` blacklist in `~/.hermes/config.yaml` |
+| OpenClaw | plugins (`active-memory`, `skill-workshop`) | `plugins.entries.<name>.enabled` in OC config (constructed by `make_config()` in `pasb_runner_openclaw.py`) |
 
----
+If either path's tools never reach the upstream model (most common cause: a
+custom proxy drops the `tools` field), `state_after_persist` will be empty,
+the judge will see nothing to score, and you'll get a "polite but stateless"
+benchmark. See `docs/TROUBLESHOOTING.md` §1.
 
-## When the user says "rerun on a new backbone"
+## Sanity check before any real run
 
-1. Edit `.env` → set `PASB_BACKBONE_MODEL=<new model id on OpenRouter>`.
-2. `bash scripts/setup_hermes_config.sh` to regenerate `~/.hermes/config.yaml`.
-3. `rm -rf /tmp/pasb_workers` to clear stale worker dirs.
-4. Update `runs/` naming (edit `scripts/launch_workers.sh` to output `runs/<MODELNAME>_w{i}.jsonl` rather than `runs/ALL_w{i}.jsonl`).
-5. Launch.
-6. After completion, **archive `runs/<MODELNAME>_*.jsonl` somewhere persistent** — these are the leaderboard inputs.
+`scripts/sanity_check.sh` runs 4 tasks (1 per substrate) and asserts:
 
----
+1. agent reply non-empty on each turn          (rules out auth / network)
+2. at least one task committed to durable state (rules out missing tools)
+3. judge returned parseable JSON               (rules out judge proxy / model)
+4. judge dimensions written into the record    (rules out flush/parse drop)
 
-## When the user says "explain the §4 numbers"
+The audit lives in `src/audit_run.py` — same code path works on full 1600
+runs too if you want to re-validate later: `python src/audit_run.py --in <jsonl> --checks all`.
 
-The six §4 findings live in `FINAL_PROPOSAL.md §4.6` (not in this repo — it's the private paper). Each is a direct read-off of one of the six tables produced by `src/analyze_section4.py`. Don't compute new statistics ad-hoc; rerun `analyze_section4.py` on the merged JSONL.
+## Judge
 
-The dominant claim: **commit-decision is the first turning point**. Same stimulus → session-only ≈ 1.2 syc, any commit ≥ 2.95 syc, primitive choice (USER vs MEMORY vs skill) adds only 0.1-0.5. This is finding 5 and it's what motivates ECG (the write-time governance mechanism, separate paper).
+Default: `moonshotai/kimi-k2.6` via OpenRouter. Override via env:
 
----
+```bash
+PASB_JUDGE_MODEL=kimi-k2.5
+PASB_JUDGE_BASE_URL=http://localhost:8003/v1
+PASB_JUDGE_API_KEY=...
+```
 
-## Out of scope for this repo
+The judge does not need `tools` forwarded. It just expects the upstream to
+return text containing JSON (parser handles markdown code-fences). If
+malformed-JSON rate is high, raise `PASB_JUDGE_MAX_RETRIES`.
 
-- **ECG governance mechanism + its evaluation**: lives in a separate paper draft; not in this repo.
-- **Pre-PASB data construction** (Stage A → D2 → flatten): one-off; details in `FINAL_PROPOSAL.md` Appendix A. This repo ships the post-construction 1600 task pool.
-- **GPU / vLLM setup**: deliberately not included — this repo assumes you go through OpenRouter for everything. The legacy server stack (vLLM + Qwen3.5-27B local) is documented in the paper but not packaged here.
+## What this repo does NOT include
+
+- Leaderboard generation / Max-FR@3 aggregation across runs
+- Cross-judge calibration (e.g. kimi ↔ deepseek ratios)
+- Per-substrate / per-progression statistical analysis
+- Figure generation
+- Anything that reads `runs/*.jsonl` to produce paper-ready numbers
+
+These belong in your own analysis pipeline. The JSONL output schema above
+is stable — write your aggregation against it.
+
+## Editing surface
+
+| When you want to... | Touch... | Don't touch... |
+|---|---|---|
+| Add a backend | `config/{hermes,openclaw}/<backend>.template` + branch in `scripts/setup_{hermes,openclaw}.sh` | Runner code |
+| Add a backbone model | env var only (`PASB_BACKBONE_MODEL`) | Config template |
+| Change judge prompt | `SYSTEM_PROMPT` in `src/judge_openrouter.py` | JSON parser (very stable, don't fragile-ify) |
+| Add a new tool / substrate | Out of scope here — modify upstream task data files in `data/` | Runners (model-agnostic) |
+| Change reset / lifecycle semantics | `run_task()` in both runners — keep them mirrored | Anything else |
+
+## Pitfalls
+
+1. **Stale worker home cache**: `pasb_runner.py` copies `~/.hermes/{config.yaml,.env}` into `$HERMES_HOME` once, never overwrites. Change config → `rm -rf /tmp/pasb_workers` → re-launch.
+2. **SIGHUP on ssh disconnect**: `setsid nohup` is supposed to be enough; on some distros (systemd-logind cgroup cleanup) it isn't. Launch under `tmux` if you see "workers all dead" after disconnect.
+3. **OC schema differs from Hermes**: keys are `agent_persist_outputs` / `agent_query_outputs` and state file paths drop the `memories/` prefix. `src/judge_oc_adapter.py` handles this for the judge; `src/audit_run.py` handles it for the audit; YOUR analysis scripts need to too.
+4. **Concurrent OC workers**: each needs a unique gateway port. The launcher computes `port = $PASB_OC_GATEWAY_PORT + worker_idx` — don't run two launchers in parallel without offsetting.

@@ -1,0 +1,43 @@
+{
+  "_comment": "OpenClaw config — Backend A: OpenRouter. Substituted from .env.",
+  "gateway": {
+    "mode": "local",
+    "port": ${PASB_OC_GATEWAY_PORT},
+    "auth": {"mode": "token", "token": "pasb-pilot"}
+  },
+  "models": {
+    "providers": {
+      "openrouter": {
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKey": "${OPENROUTER_API_KEY}",
+        "api": "openai-completions",
+        "models": [{
+          "id": "${PASB_BACKBONE_MODEL}",
+          "name": "${PASB_BACKBONE_MODEL} (PASB)",
+          "contextWindow": 65536,
+          "maxTokens": 4096
+        }]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {"primary": "openrouter/${PASB_BACKBONE_MODEL}"},
+      "models": {"openrouter/${PASB_BACKBONE_MODEL}": {}}
+    }
+  },
+  "plugins": {
+    "entries": {
+      "active-memory": {"enabled": true},
+      "skill-workshop": {
+        "enabled": true,
+        "config": {
+          "approvalPolicy": "auto",
+          "reviewMode": "heuristic",
+          "reviewInterval": 1,
+          "reviewMinToolCalls": 1
+        }
+      }
+    }
+  }
+}
