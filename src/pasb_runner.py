@@ -106,15 +106,32 @@ def dump_state(home: Path) -> dict:
     return s
 
 
-def hermes_turn(hermes_bin: str, env: dict, prompt: str, continue_session: bool = False) -> dict:
+def latest_session_id(home: Path) -> str:
+    """Return the session_id of the most recently written session under
+    $HERMES_HOME/sessions/, or "" if none. Used to derive an explicit name
+    for ``--resume`` on subsequent turns of the same stage."""
+    sd = home / "sessions"
+    if not sd.exists():
+        return ""
+    files = [f for f in sd.iterdir() if f.is_file() and f.name.startswith("session_") and f.name.endswith(".json")]
+    if not files:
+        return ""
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    name = files[0].stem  # "session_YYYYMMDD_HHMMSS_XXXXXX"
+    return name[len("session_"):] if name.startswith("session_") else name
+
+
+def hermes_turn(hermes_bin: str, env: dict, prompt: str, resume_id: str = "") -> dict:
     """Call hermes; retry with exponential backoff on connection errors / 429.
 
-    When ``continue_session`` is True, append ``--continue`` so the call
-    resumes the most recent Hermes session under $HERMES_HOME, giving
-    within-stage multi-turn chat continuity. The first turn of a stage uses
-    ``continue_session=False`` to start a fresh session, and ``sessions/``
-    is cleared between persist and query (see ``reset_sessions_only``) to
-    enforce PASB's no-implicit-chat-carry policy across stages.
+    When ``resume_id`` is non-empty, append ``--resume <id>`` so the call
+    resumes that specific Hermes session under $HERMES_HOME. The first turn
+    of a stage calls with ``resume_id=""`` (creates a fresh session); the
+    runner then reads the newly created session id from disk and passes it
+    explicitly on subsequent turns. This is more reliable than
+    ``--continue`` (which picks "most recent" and can race when Hermes
+    spawns auxiliary sessions for memory or skill subagents). ``sessions/``
+    is cleared between persist and query (see ``reset_sessions_only``).
     """
     last_resp = None
     for attempt in range(MAX_TURN_RETRIES):
@@ -129,8 +146,8 @@ def hermes_turn(hermes_bin: str, env: dict, prompt: str, continue_session: bool 
         t0 = time.time()
         try:
             cmd = [hermes_bin, "-z", prompt, "--yolo"]
-            if continue_session:
-                cmd.append("--continue")
+            if resume_id:
+                cmd.extend(["--resume", resume_id])
             r = subprocess.run(
                 cmd,
                 env=env, capture_output=True, text=True, timeout=TURN_TIMEOUT,
@@ -174,21 +191,26 @@ def run_task(task: dict, home: Path, hermes_bin: str) -> dict:
     env["HERMES_HOME"] = str(home)
 
     persist = []
+    persist_sid = ""  # learned after T0 by reading the newest sessions/*.json
     for i, turn in enumerate(task["persist_dialog"]):
-        # Turn 0 starts a fresh persist session; turns 1+ continue it via --continue.
-        persist.append({"turn": i + 1, **hermes_turn(hermes_bin, env, turn, continue_session=(i > 0))})
+        persist.append({"turn": i + 1, **hermes_turn(hermes_bin, env, turn, resume_id=persist_sid)})
+        if i == 0:
+            persist_sid = latest_session_id(home)
 
     time.sleep(SLEEP_AFTER_PERSIST)
     state = dump_state(home)
 
     # Enforce no-implicit-chat-carry across stages: clear runtime sessions
     # but keep durable USER.md / MEMORY.md / skills. Query Q0 then starts
-    # fresh, and Q1+ continue within the query stage.
+    # a fresh session; Q1+ resume it by explicit id.
     reset_sessions_only(home)
 
     query = []
+    query_sid = ""
     for i, q in enumerate(task["query_dialog"]):
-        query.append({"turn": i + 1, **hermes_turn(hermes_bin, env, q, continue_session=(i > 0))})
+        query.append({"turn": i + 1, **hermes_turn(hermes_bin, env, q, resume_id=query_sid)})
+        if i == 0:
+            query_sid = latest_session_id(home)
 
     rec = {
         "task_id": task["task_id"],
@@ -203,19 +225,23 @@ def run_task(task: dict, home: Path, hermes_bin: str) -> dict:
         "completed_at": time.time(),
     }
 
-    try:
-        judge_result = judge_openrouter.judge_task(task, rec)
-        rec["judge"] = judge_result
-        print(
-            f"  judge: syc_max={judge_result.get('task_sycophancy_max')} "
-            f"ep_promo_max={judge_result.get('task_epistemic_promotion_max')} "
-            f"carry_max={judge_result.get('task_carryover_max')} "
-            f"amp_max={judge_result.get('task_amplification_max')}",
-            flush=True,
-        )
-    except Exception as e:
-        rec["judge"] = {"error": str(e)[:300]}
-        print(f"  judge error: {e}", flush=True)
+    # Judge is run as a separate post-processing pass; runners only save the
+    # raw episode trace. Set PASB_INLINE_JUDGE=1 to bring back the inline
+    # judge call (requires OPENROUTER_API_KEY).
+    if os.environ.get("PASB_INLINE_JUDGE", "0") == "1":
+        try:
+            judge_result = judge_openrouter.judge_task(task, rec)
+            rec["judge"] = judge_result
+            print(
+                f"  judge: syc_max={judge_result.get('task_sycophancy_max')} "
+                f"ep_promo_max={judge_result.get('task_epistemic_promotion_max')} "
+                f"carry_max={judge_result.get('task_carryover_max')} "
+                f"amp_max={judge_result.get('task_amplification_max')}",
+                flush=True,
+            )
+        except Exception as e:
+            rec["judge"] = {"error": str(e)[:300]}
+            print(f"  judge error: {e}", flush=True)
     return rec
 
 
@@ -230,8 +256,9 @@ def main():
                    help="random jitter in [0,X]s before first task (spreads workers' first OpenRouter call)")
     args = p.parse_args()
 
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise SystemExit("OPENROUTER_API_KEY env var is required (export it or use .env)")
+    # OPENROUTER_API_KEY is only needed when the inline judge is enabled.
+    if os.environ.get("PASB_INLINE_JUDGE", "0") == "1" and not os.environ.get("OPENROUTER_API_KEY"):
+        raise SystemExit("OPENROUTER_API_KEY env var is required when PASB_INLINE_JUDGE=1")
 
     if args.start_jitter > 0:
         delay = random.random() * args.start_jitter
@@ -245,6 +272,26 @@ def main():
         dst_f = home / f
         if src_f.exists() and not dst_f.exists():
             shutil.copy(src_f, dst_f)
+
+    # Optional per-worker config patches via env vars so the same template
+    # config can be shared across workers that talk to different vLLM ports.
+    #   PASB_HERMES_BASE_URL  -> overrides model.base_url
+    #   PASB_HERMES_MODEL     -> overrides model.default
+    #   PASB_HERMES_MEMORY    -> overrides memory.provider (e.g. "default")
+    cfg_path = home / "config.yaml"
+    if cfg_path.exists():
+        import re as _re
+        txt = cfg_path.read_text()
+        base_url = os.environ.get("PASB_HERMES_BASE_URL")
+        if base_url:
+            txt = _re.sub(r"(\n\s*base_url:\s*).*", r"\g<1>" + base_url, txt, count=1)
+        model_id = os.environ.get("PASB_HERMES_MODEL")
+        if model_id:
+            txt = _re.sub(r"(\n\s*default:\s*).*", r"\g<1>" + model_id, txt, count=1)
+        mem_provider = os.environ.get("PASB_HERMES_MEMORY")
+        if mem_provider:
+            txt = _re.sub(r"(\n\s*provider:\s*).*", r"\g<1>" + mem_provider, txt, count=1)
+        cfg_path.write_text(txt)
 
     done = set()
     out_path = Path(args.out)
