@@ -83,7 +83,7 @@ def make_config(port: int) -> dict:
         },
         "plugins": {
             "entries": {
-                "active-memory": {"enabled": True},
+                "active-memory": {"enabled": False},
                 "skill-workshop": {
                     "enabled": True,
                     "config": {

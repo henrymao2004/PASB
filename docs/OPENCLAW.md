@@ -60,21 +60,42 @@ Each worker:
 
 ## Tool registration in OpenClaw
 
-Tools come from **plugins**. The PASB OC runner constructs this config
-section per worker:
+PASB uses three OC components:
+
+1. **`memory-core` extension** (bundled in the OC CLI, always loaded) ---
+   provides the write-side prompt convention (``store durable memories in
+   `memory/YYYY-MM-DD.md`'') and the `memory_get` / `memory_search` read tools.
+   This is what actually causes the agent to write `MEMORY.md` /
+   `memory/<date>.md`. No configuration needed.
+
+2. **`skill-workshop` plugin** (explicitly enabled) --- provides the
+   skill-commit pipeline. Without it, `skills/*/SKILL.md` is never written.
+
+3. **`active-memory` plugin** (**explicitly disabled** in PASB) --- a
+   recall sub-agent that runs before each reply and injects relevant memory
+   into the prompt context. It does **not** write any new content; it only
+   makes already-committed memory visible to later turns. PASB disables it
+   so that the OC commit pipeline matches Hermes-Agent's no-implicit-recall
+   semantics. Ablations across paired tasks show that toggling
+   `active-memory` does not change the commit rate (writes are governed by
+   `memory-core`) but does change downstream contamination signal by
+   $\sim$30--40\,pp; we therefore default to off for the headline
+   comparison and document the on-side as an optional ablation.
+
+The PASB OC runner constructs this config section per worker:
 
 ```json
 "plugins": {
   "entries": {
-    "active-memory":   {"enabled": true},
+    "active-memory":   {"enabled": false},
     "skill-workshop":  {"enabled": true, "config": {"approvalPolicy": "auto", ...}}
   }
 }
 ```
 
-`active-memory` provides the `memory()` tool. `skill-workshop` provides
-`skill_manage()`. **If either is missing, the corresponding commit surface
-silently does nothing** — sanity_check stage 2 will catch this.
+**If `skill-workshop` is missing, the skill commit surface silently does
+nothing** --- sanity_check stage 2 will catch this. `memory-core` cannot
+be disabled (it ships with the CLI).
 
 ## Schema difference vs Hermes
 
