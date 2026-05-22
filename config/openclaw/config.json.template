@@ -28,7 +28,7 @@
   },
   "plugins": {
     "entries": {
-      "active-memory": {"enabled": true},
+      "active-memory": {"enabled": false},
       "skill-workshop": {
         "enabled": true,
         "config": {
