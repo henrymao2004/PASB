@@ -80,9 +80,11 @@ def reset_sessions_only(home: Path):
 
     Used between the persist and query stages so the query stage starts with
     no chat history but inherits all durable state (USER.md / MEMORY.md /
-    skills/). Matches PASB's no-implicit-chat-carry semantics across stages
-    while preserving within-stage multi-turn session continuity (achieved via
-    --continue on turns 1+).
+    skills/). Matches PASB's no-implicit-chat-carry semantics across stages.
+
+    Within-stage multi-turn continuity is achieved by explicit
+    ``--resume <session_id>`` on turns 1+ (see ``hermes_turn`` and
+    ``latest_session_id``), not by ``--continue``.
     """
     sd = home / "sessions"
     if sd.exists():
