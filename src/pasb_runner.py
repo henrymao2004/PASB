@@ -75,6 +75,21 @@ def reset(home: Path):
         d.mkdir(parents=True, exist_ok=True)
 
 
+def reset_sessions_only(home: Path):
+    """Clear the sessions directory but keep memories + skills.
+
+    Used between the persist and query stages so the query stage starts with
+    no chat history but inherits all durable state (USER.md / MEMORY.md /
+    skills/). Matches PASB's no-implicit-chat-carry semantics across stages
+    while preserving within-stage multi-turn session continuity (achieved via
+    --continue on turns 1+).
+    """
+    sd = home / "sessions"
+    if sd.exists():
+        shutil.rmtree(sd)
+    sd.mkdir(parents=True, exist_ok=True)
+
+
 def dump_state(home: Path) -> dict:
     s = {}
     for rel in ("memories/USER.md", "memories/MEMORY.md"):
@@ -91,8 +106,16 @@ def dump_state(home: Path) -> dict:
     return s
 
 
-def hermes_turn(hermes_bin: str, env: dict, prompt: str) -> dict:
-    """Call hermes; retry with exponential backoff on connection errors / 429."""
+def hermes_turn(hermes_bin: str, env: dict, prompt: str, continue_session: bool = False) -> dict:
+    """Call hermes; retry with exponential backoff on connection errors / 429.
+
+    When ``continue_session`` is True, append ``--continue`` so the call
+    resumes the most recent Hermes session under $HERMES_HOME, giving
+    within-stage multi-turn chat continuity. The first turn of a stage uses
+    ``continue_session=False`` to start a fresh session, and ``sessions/``
+    is cleared between persist and query (see ``reset_sessions_only``) to
+    enforce PASB's no-implicit-chat-carry policy across stages.
+    """
     last_resp = None
     for attempt in range(MAX_TURN_RETRIES):
         if not backend_healthy():
@@ -105,8 +128,11 @@ def hermes_turn(hermes_bin: str, env: dict, prompt: str) -> dict:
 
         t0 = time.time()
         try:
+            cmd = [hermes_bin, "-z", prompt, "--yolo"]
+            if continue_session:
+                cmd.append("--continue")
             r = subprocess.run(
-                [hermes_bin, "-z", prompt, "--yolo"],
+                cmd,
                 env=env, capture_output=True, text=True, timeout=TURN_TIMEOUT,
             )
             agent_text = r.stdout or ""
@@ -149,14 +175,20 @@ def run_task(task: dict, home: Path, hermes_bin: str) -> dict:
 
     persist = []
     for i, turn in enumerate(task["persist_dialog"]):
-        persist.append({"turn": i + 1, **hermes_turn(hermes_bin, env, turn)})
+        # Turn 0 starts a fresh persist session; turns 1+ continue it via --continue.
+        persist.append({"turn": i + 1, **hermes_turn(hermes_bin, env, turn, continue_session=(i > 0))})
 
     time.sleep(SLEEP_AFTER_PERSIST)
     state = dump_state(home)
 
+    # Enforce no-implicit-chat-carry across stages: clear runtime sessions
+    # but keep durable USER.md / MEMORY.md / skills. Query Q0 then starts
+    # fresh, and Q1+ continue within the query stage.
+    reset_sessions_only(home)
+
     query = []
     for i, q in enumerate(task["query_dialog"]):
-        query.append({"turn": i + 1, **hermes_turn(hermes_bin, env, q)})
+        query.append({"turn": i + 1, **hermes_turn(hermes_bin, env, q, continue_session=(i > 0))})
 
     rec = {
         "task_id": task["task_id"],
