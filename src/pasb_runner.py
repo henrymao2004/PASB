@@ -34,6 +34,7 @@ import argparse
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import time
@@ -124,17 +125,66 @@ def latest_session_id(home: Path) -> str:
     return name[len("session_"):] if name.startswith("session_") else name
 
 
+_CHATQ_BOX_CHARS = "─╭╰╮╯│"
+_CHATQ_PANEL_RE = re.compile(r"╭─[^\n]*Hermes[^\n]*╮\n(.*?)\n[ \t]*╰─", re.DOTALL)
+_CHATQ_RESUMED_RE = re.compile(r"Resumed session ([a-z0-9_]+)", re.IGNORECASE)
+
+
+def parse_chat_q_output(stdout: str) -> tuple:
+    """Extract (agent_text, resumed_session_id) from `hermes chat -q` stdout.
+
+    chat -q renders the agent response inside a Unicode box panel:
+        ╭─ ⚕ Hermes ───────╮
+        │  <agent text>    │
+        ╰───────────────────╯
+    Banner lines ("Query:", "Initializing agent...", "Resumed session ..."),
+    horizontal rules, and the box frame itself are stripped. If no panel is
+    found (e.g., early failure / timeout), the full stdout is returned so
+    that downstream retry/empty-detection logic still fires.
+    """
+    if not stdout:
+        return "", ""
+    resumed = ""
+    m_r = _CHATQ_RESUMED_RE.search(stdout)
+    if m_r:
+        resumed = m_r.group(1)
+    panels = _CHATQ_PANEL_RE.findall(stdout)
+    if not panels:
+        return stdout, resumed
+    text = panels[-1]
+    out_lines = []
+    for ln in text.splitlines():
+        stripped = ln.strip()
+        if not stripped:
+            out_lines.append("")
+            continue
+        # drop pure-box rule lines
+        if all(c in _CHATQ_BOX_CHARS + " " for c in stripped):
+            continue
+        # strip leading/trailing box characters + indent
+        stripped = stripped.lstrip(_CHATQ_BOX_CHARS + " ").rstrip(_CHATQ_BOX_CHARS + " ")
+        out_lines.append(stripped)
+    # collapse trailing blanks
+    while out_lines and not out_lines[-1]:
+        out_lines.pop()
+    return "\n".join(out_lines), resumed
+
+
 def hermes_turn(hermes_bin: str, env: dict, prompt: str, resume_id: str = "") -> dict:
     """Call hermes; retry with exponential backoff on connection errors / 429.
 
-    When ``resume_id`` is non-empty, append ``--resume <id>`` so the call
-    resumes that specific Hermes session under $HERMES_HOME. The first turn
-    of a stage calls with ``resume_id=""`` (creates a fresh session); the
-    runner then reads the newly created session id from disk and passes it
-    explicitly on subsequent turns. This is more reliable than
-    ``--continue`` (which picks "most recent" and can race when Hermes
-    spawns auxiliary sessions for memory or skill subagents). ``sessions/``
-    is cleared between persist and query (see ``reset_sessions_only``).
+    Uses ``hermes chat -q QUERY --pass-session-id`` (non-oneshot, true
+    multi-turn). When ``resume_id`` is non-empty, appends ``--resume <id>``;
+    chat -q with --resume *actually replays* the prior chat history into
+    the model's context (verified: the session file grows and the agent
+    prints "↻ Resumed session XXX (N total messages)"). This is unlike
+    ``hermes -z --resume`` which only attaches the id as metadata.
+
+    Persist T0 calls with ``resume_id=""`` (fresh session); the runner
+    then reads the newly created session id (from this turn's stdout or
+    from the newest ``sessions/*.json``) and passes it explicitly on
+    persist T1..T4. Same pattern for query T0..T2 after
+    ``reset_sessions_only`` between stages.
     """
     last_resp = None
     for attempt in range(MAX_TURN_RETRIES):
@@ -148,18 +198,19 @@ def hermes_turn(hermes_bin: str, env: dict, prompt: str, resume_id: str = "") ->
 
         t0 = time.time()
         try:
-            cmd = [hermes_bin, "-z", prompt, "--yolo"]
+            cmd = [hermes_bin, "chat", "-q", prompt, "--yolo", "--pass-session-id"]
             if resume_id:
                 cmd.extend(["--resume", resume_id])
             r = subprocess.run(
                 cmd,
                 env=env, capture_output=True, text=True, timeout=TURN_TIMEOUT,
             )
-            agent_text = r.stdout or ""
+            raw_stdout = r.stdout or ""
+            agent_text, _ = parse_chat_q_output(raw_stdout)
             is_transient = (
-                ("API call failed" in agent_text)
-                or ("Connection error" in agent_text)
-                or ("rate limit" in agent_text.lower())
+                ("API call failed" in raw_stdout)
+                or ("Connection error" in raw_stdout)
+                or ("rate limit" in raw_stdout.lower())
                 or (not agent_text.strip())
             )
             resp = {
