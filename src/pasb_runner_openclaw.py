@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import judge_openrouter
+import pasb_lock
 from judge_oc_adapter import adapt_oc_to_judge_record
 
 MODEL_ID = os.environ.get("PASB_OC_MODEL", "qwen3.5-27b")
@@ -197,6 +198,7 @@ def main():
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--start-jitter", type=float, default=0.0)
     args = p.parse_args()
+    _pasb_lock_fd = pasb_lock.acquire(args.out)  # noqa: F841
 
     if args.start_jitter > 0:
         time.sleep(random.random() * args.start_jitter)

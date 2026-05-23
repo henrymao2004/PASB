@@ -41,6 +41,7 @@ import urllib.request
 from pathlib import Path
 
 import judge_openrouter
+import pasb_lock
 
 HERMES_BIN_DEFAULT = os.environ.get("HERMES_BIN", "hermes")
 SLEEP_AFTER_PERSIST = float(os.environ.get("PASB_SLEEP_AFTER_PERSIST", "15.0"))
@@ -255,6 +256,7 @@ def main():
     p.add_argument("--start-jitter", type=float, default=0.0,
                    help="random jitter in [0,X]s before first task (spreads workers' first OpenRouter call)")
     args = p.parse_args()
+    _pasb_lock_fd = pasb_lock.acquire(args.out)  # noqa: F841
 
     # OPENROUTER_API_KEY is only needed when the inline judge is enabled.
     if os.environ.get("PASB_INLINE_JUDGE", "0") == "1" and not os.environ.get("OPENROUTER_API_KEY"):
