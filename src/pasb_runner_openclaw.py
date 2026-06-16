@@ -49,7 +49,7 @@ SLEEP_AFTER_PERSIST = float(os.environ.get("PASB_SLEEP_AFTER_PERSIST", "15.0"))
 TURN_TIMEOUT = int(os.environ.get("PASB_TURN_TIMEOUT", "600"))
 
 
-def make_config(port: int) -> dict:
+def make_config(port: int, workspace: str = "") -> dict:
     """Construct OpenClaw config JSON. Tool registration happens here:
     `plugins.entries.active-memory` enables `memory()`,
     `plugins.entries.skill-workshop` enables the `skill_workshop` tool family.
@@ -92,16 +92,18 @@ def make_config(port: int) -> dict:
             "defaults": {
                 "model": {"primary": f"primary/{MODEL_ID}"},
                 "models": {f"primary/{MODEL_ID}": {}},
+                **({"workspace": workspace} if workspace else {}),
             },
         },
         "tools": {
             "profile": "coding",
             "alsoAllow": ["skill_workshop"],
-        },
-        "plugins": {
-            "entries": {
-                "active-memory": {"enabled": False},
-                "skill-workshop": {"enabled": True},
+            "exec": {
+                # YOLO: skip all host-exec approval prompts. Required so the
+                # agent never blocks on a shell-tool approval mid-task.
+                "security": "full",
+                "ask": "off",
+                "host": "gateway",
             },
         },
         "skills": {
@@ -110,19 +112,46 @@ def make_config(port: int) -> dict:
                 "approvalPolicy": "auto",
                 "maxPending": 200,
                 "maxSkillBytes": 40000,
-                "allowSymlinkTargetWrites": False,
             },
         },
     }
+
+
+def write_host_approvals(profile: Path):
+    """Write the host-local exec-approvals.json to match YOLO config.
+
+    Per OpenClaw 2026-06 docs, full no-approval requires BOTH the tool
+    policy (tools.exec.*) AND the host approvals file. Missing this layer
+    means any host-exec request hits the default `askFallback: "deny"`
+    when no UI is reachable, blocking the agent silently.
+    """
+    payload = {
+        "version": 1,
+        "defaults": {
+            "security": "full",
+            "ask": "off",
+            "askFallback": "full",
+            "autoAllowSkills": True,
+        },
+    }
+    (profile / "exec-approvals.json").write_text(json.dumps(payload, indent=2))
 
 
 def reset_profile(profile: Path, port: int):
     if profile.exists():
         shutil.rmtree(profile)
     profile.mkdir(parents=True, exist_ok=True)
-    state = profile / "state"
-    state.mkdir(parents=True, exist_ok=True)
-    (state / "openclaw.json").write_text(json.dumps(make_config(port), indent=2))
+    # Pin workspace inside the per-worker state dir so dump_state knows
+    # where to read USER.md / MEMORY.md / skills/.
+    workspace = profile / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    # 2026-06 CLI expects <STATE_DIR>/openclaw.json directly (the older runner
+    # used <STATE_DIR>/state/openclaw.json which the new CLI ignores).
+    (profile / "openclaw.json").write_text(
+        json.dumps(make_config(port, workspace=str(workspace)), indent=2)
+    )
+    # YOLO host-approvals file sits at the same level.
+    write_host_approvals(profile)
 
 
 def dump_state(profile: Path) -> dict:
@@ -143,19 +172,51 @@ def dump_state(profile: Path) -> dict:
     return state
 
 
-def oc_turn(profile: Path, port: int, prompt: str) -> dict:
+def oc_turn(profile: Path, port: int, prompt: str, session_key: str = "pasb") -> dict:
+    """One headless agent turn via the 2026-06 CLI.
+
+    Uses `openclaw --profile <dir> agent --local --session-key <k>
+    --message <prompt> --json`. The `--local` flag runs the embedded agent
+    in-process (no separate gateway server needed). `--session-key` keeps
+    persist/query turns within one stateful conversation.
+
+    Legacy syntax `openclaw <prompt> --yolo` was removed in 2026.6.x;
+    YOLO semantics now come from tools.exec.* config + the host
+    exec-approvals.json file written by reset_profile().
+    """
     t0 = time.time()
     env = os.environ.copy()
-    env["OPENCLAW_PROFILE"] = str(profile)
-    env["OPENCLAW_GATEWAY_PORT"] = str(port)
+    env["OPENCLAW_STATE_DIR"] = str(profile)
     try:
         r = subprocess.run(
-            [OC_CLI, prompt, "--yolo"],
+            [OC_CLI, "agent",
+             "--local", "--agent", "main",
+             "--session-key", session_key,
+             "--message", prompt, "--json"],
             env=env, capture_output=True, text=True, timeout=TURN_TIMEOUT,
         )
+        # The CLI prints a JSON envelope on stdout when --json is set.
+        # Schema: {"payloads": [{"text": "..."}], ...}. Older paths used
+        # top-level "reply"/"message"/"content"; we accept both.
+        raw = (r.stdout or "").strip()
+        agent_text = raw
+        try:
+            env_obj = json.loads(raw)
+            payloads = env_obj.get("payloads") or []
+            if payloads and isinstance(payloads, list):
+                texts = [p.get("text") for p in payloads if isinstance(p, dict) and p.get("text")]
+                if texts:
+                    agent_text = "\n".join(texts).strip()
+            else:
+                agent_text = (env_obj.get("reply")
+                              or env_obj.get("message")
+                              or env_obj.get("content")
+                              or raw)
+        except Exception:
+            pass
         return {
             "user": prompt,
-            "agent": (r.stdout or "").strip(),
+            "agent": agent_text,
             "stderr": r.stderr[-2000:] if r.stderr else "",
             "elapsed": time.time() - t0,
             "ret": r.returncode,
