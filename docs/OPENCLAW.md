@@ -11,16 +11,22 @@ npm install -g openclaw
 # Verify
 which openclaw
 openclaw --help
-
-# Ensure required plugins (most installs ship these by default)
-openclaw plugins list | grep -E 'active-memory|skill-workshop'
 ```
 
-If `active-memory` or `skill-workshop` is missing:
+Skill Workshop is **built into the OpenClaw CLI** (since the 2026-06
+release) and is included in `tools.profile: "coding"` --- no separate
+plugin install is needed. The `plugins.entries.skill-workshop` entry in
+our config is the load switch for the workspace service and is left
+`enabled: true`; older releases also needed `openclaw plugins install
+skill-workshop` to ship the tool family.
+
+`active-memory` is still a separate plugin. PASB explicitly **disables**
+it (see "Tool registration in OpenClaw" below); if a future ablation
+needs it on, install with `openclaw plugins install active-memory`.
 
 ```bash
-openclaw plugins install active-memory
-openclaw plugins install skill-workshop
+# Inspect what is loaded (optional)
+openclaw plugins list
 ```
 
 ## Configure

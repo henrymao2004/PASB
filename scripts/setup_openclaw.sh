@@ -20,11 +20,14 @@ if ! command -v openclaw &>/dev/null; then
   exit 1
 fi
 
-# 2. Ensure required plugins are enabled
-# active-memory provides memory() tool; skill-workshop provides skill_manage()
-# If either is missing, commit pipeline silently fails (see docs/TROUBLESHOOTING.md §2).
-echo "Required plugins: active-memory, skill-workshop"
-echo "(installed and enabled by default by openclaw; verify with: openclaw plugins list)"
+# 2. Verify component availability
+# Skill Workshop (skill_workshop tool family) is BUILT INTO openclaw CLI as of
+# the 2026-06 release; no separate plugin install needed. active-memory is
+# still a separate plugin but PASB explicitly disables it. memory-core ships
+# with the CLI and cannot be disabled.
+echo "Built-in: skill_workshop (via tools.profile=coding), memory-core extension"
+echo "Optional plugins (PASB disables): active-memory"
+echo "(inspect what is loaded with: openclaw plugins list)"
 
 : "${PASB_BACKBONE_MODEL:?PASB_BACKBONE_MODEL missing in .env}"
 : "${PASB_BACKBONE_URL:?PASB_BACKBONE_URL missing in .env (point at your proxy)}"
