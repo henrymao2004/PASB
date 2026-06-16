@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""PASB v1 OpenClaw runner — calls OpenClaw CLI through its local gateway.
+"""PASB v1 OpenClaw runner — calls the OpenClaw CLI through its local gateway.
+
+Pinned to OpenClaw 2026.4.26 semantics (the version PASB experiments ran on).
+The post-2026-06 release reshapes Skill Workshop into a built-in service; for
+that variant see branch `openclaw-2026.6`.
 
 Mirrors `pasb_runner.py` (Hermes) lifecycle:
-  1. reset worker profile (memories, skills, sessions)
-  2. persist phase: 5 turns of `openclaw 'prompt' --yolo`
-  3. sleep SLEEP_AFTER_PERSIST (let auto-memory + skill-workshop curators settle)
+  1. reset worker profile (memories, skills, sessions) + drop YOLO
+     `exec-approvals.json` so the agent never blocks on a host-exec prompt
+  2. persist phase: 5 turns of `openclaw agent --local --agent main
+     --session-key <k> --message <prompt> --json`
+  3. sleep SLEEP_AFTER_PERSIST (let active-memory + skill-workshop curators settle)
   4. snapshot workspace state (USER.md / MEMORY.md / skills/*)
-  5. query phase: 3 turns of `openclaw 'prompt' --yolo`
+  5. query phase: 3 turns of the same agent invocation, same session key
   6. judge per query turn (4 dim Likert) + cross-turn aggregate (persistence, escalation)
   7. write one JSONL line
 
@@ -49,11 +55,22 @@ SLEEP_AFTER_PERSIST = float(os.environ.get("PASB_SLEEP_AFTER_PERSIST", "15.0"))
 TURN_TIMEOUT = int(os.environ.get("PASB_TURN_TIMEOUT", "600"))
 
 
-def make_config(port: int) -> dict:
-    """Construct OpenClaw config JSON. Tool registration happens here:
-    `plugins.entries.active-memory` enables `memory()`,
-    `plugins.entries.skill-workshop` enables `skill_manage()`. Remove either
-    plugin and the corresponding commit surface vanishes — see docs/TROUBLESHOOTING.md.
+def make_config(port: int, workspace: str = "") -> dict:
+    """Construct OpenClaw config JSON for 2026.4.26.
+
+    Tool registration:
+    - `plugins.entries.active-memory` (disabled) — would inject the recall
+      sub-agent; PASB matches Hermes's no-implicit-recall semantics.
+    - `plugins.entries.skill-workshop` (enabled) — provides `skill_manage`
+      and the auto-apply commit pipeline. `config.approvalPolicy: "auto"`
+      skips the human approval prompt; the lightweight `reviewMode:
+      "heuristic"` + `reviewInterval: 1` + `reviewMinToolCalls: 1` lets
+      every agent action trigger an immediate review pass.
+
+    YOLO host-exec is enforced both here (`tools.exec.*`) and in the
+    per-profile host approvals file (`reset_profile` writes
+    `exec-approvals.json`). Both layers are required; either omitted alone
+    falls back to `deny`.
     """
     return {
         "gateway": {
@@ -80,7 +97,13 @@ def make_config(port: int) -> dict:
             "defaults": {
                 "model": {"primary": f"primary/{MODEL_ID}"},
                 "models": {f"primary/{MODEL_ID}": {}},
+                **({"workspace": workspace} if workspace else {}),
             },
+        },
+        "tools": {
+            "profile": "coding",
+            "alsoAllow": ["skill_manage"],
+            "exec": {"security": "full", "ask": "off", "host": "gateway"},
         },
         "plugins": {
             "entries": {
@@ -99,13 +122,37 @@ def make_config(port: int) -> dict:
     }
 
 
+def write_host_approvals(profile: Path):
+    """YOLO host-approvals file. Without this layer, even with
+    tools.exec.security=full set in config, host-exec falls back to deny
+    when no UI is reachable (the default askFallback). Apply
+    `exec-policy preset yolo` semantics by writing both layers.
+    """
+    payload = {
+        "version": 1,
+        "defaults": {
+            "security": "full",
+            "ask": "off",
+            "askFallback": "full",
+            "autoAllowSkills": True,
+        },
+    }
+    (profile / "exec-approvals.json").write_text(json.dumps(payload, indent=2))
+
+
 def reset_profile(profile: Path, port: int):
     if profile.exists():
         shutil.rmtree(profile)
     profile.mkdir(parents=True, exist_ok=True)
-    state = profile / "state"
-    state.mkdir(parents=True, exist_ok=True)
-    (state / "openclaw.json").write_text(json.dumps(make_config(port), indent=2))
+    # Pin workspace inside the per-worker state dir so dump_state has a
+    # predictable location to read USER.md / MEMORY.md / skills/ from.
+    workspace = profile / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    # OC 2026.4.26 reads <STATE_DIR>/openclaw.json (not nested under state/).
+    (profile / "openclaw.json").write_text(
+        json.dumps(make_config(port, workspace=str(workspace)), indent=2)
+    )
+    write_host_approvals(profile)
 
 
 def dump_state(profile: Path) -> dict:
@@ -126,19 +173,48 @@ def dump_state(profile: Path) -> dict:
     return state
 
 
-def oc_turn(profile: Path, port: int, prompt: str) -> dict:
+def oc_turn(profile: Path, port: int, prompt: str, session_key: str = "pasb") -> dict:
+    """One headless agent turn via the 2026.4.26 CLI.
+
+    Uses `openclaw agent --local --agent main --session-key <k>
+    --message <prompt> --json`. `--local` keeps the embedded agent runtime
+    in-process (no separate gateway). `--session-key` keeps persist + query
+    turns inside one stateful conversation. The earlier bare-positional
+    invocation (`openclaw <prompt> --yolo`) is not a valid CLI shape; YOLO
+    semantics come from tools.exec.* config + the host approvals file
+    written by reset_profile().
+    """
     t0 = time.time()
     env = os.environ.copy()
-    env["OPENCLAW_PROFILE"] = str(profile)
-    env["OPENCLAW_GATEWAY_PORT"] = str(port)
+    env["OPENCLAW_STATE_DIR"] = str(profile)
     try:
         r = subprocess.run(
-            [OC_CLI, prompt, "--yolo"],
+            [OC_CLI, "agent", "--local", "--agent", "main",
+             "--session-id", session_key,
+             "--message", prompt, "--json"],
             env=env, capture_output=True, text=True, timeout=TURN_TIMEOUT,
         )
+        # 2026.4.26 emits a JSON envelope on stdout under --json. The
+        # reply lives in `payloads[].text`; older / forked builds may
+        # have placed it at top-level `reply|message|content`.
+        raw = (r.stdout or "").strip()
+        agent_text = raw
+        try:
+            env_obj = json.loads(raw)
+            payloads = env_obj.get("payloads") or []
+            if payloads and isinstance(payloads, list):
+                texts = [p.get("text") for p in payloads
+                         if isinstance(p, dict) and p.get("text")]
+                if texts:
+                    agent_text = "\n".join(texts).strip()
+            else:
+                agent_text = (env_obj.get("reply") or env_obj.get("message")
+                              or env_obj.get("content") or raw)
+        except Exception:
+            pass
         return {
             "user": prompt,
-            "agent": (r.stdout or "").strip(),
+            "agent": agent_text,
             "stderr": r.stderr[-2000:] if r.stderr else "",
             "elapsed": time.time() - t0,
             "ret": r.returncode,
