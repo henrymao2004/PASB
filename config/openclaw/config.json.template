@@ -1,5 +1,5 @@
 {
-  "_comment": "OpenClaw config — Bytedance / closed-endpoint deployment. Proxy MUST forward tools/tool_choice (see examples/proxies/ and docs/TROUBLESHOOTING.md §1).",
+  "_comment": "OpenClaw config (Skill Workshop 2026-06 schema). Proxy MUST forward tools/tool_choice (see examples/proxies/ and docs/TROUBLESHOOTING.md §1). The skills.workshop block must appear at the TOP LEVEL — older releases also accepted these keys under plugins.entries.skill-workshop.config, but the current schema is skills.workshop.*; we keep the plugin entry only as the load switch.",
   "gateway": {
     "mode": "local",
     "port": ${PASB_OC_GATEWAY_PORT},
@@ -26,18 +26,23 @@
       "models": {"custom-proxy/${PASB_BACKBONE_MODEL}": {}}
     }
   },
+  "tools": {
+    "profile": "coding",
+    "alsoAllow": ["skill_workshop"]
+  },
   "plugins": {
     "entries": {
       "active-memory": {"enabled": false},
-      "skill-workshop": {
-        "enabled": true,
-        "config": {
-          "approvalPolicy": "auto",
-          "reviewMode": "heuristic",
-          "reviewInterval": 1,
-          "reviewMinToolCalls": 1
-        }
-      }
+      "skill-workshop": {"enabled": true}
+    }
+  },
+  "skills": {
+    "workshop": {
+      "autonomous": {"enabled": true},
+      "approvalPolicy": "auto",
+      "maxPending": 200,
+      "maxSkillBytes": 40000,
+      "allowSymlinkTargetWrites": false
     }
   }
 }

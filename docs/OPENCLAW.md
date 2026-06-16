@@ -82,20 +82,76 @@ PASB uses three OC components:
    $\sim$30--40\,pp; we therefore default to off for the headline
    comparison and document the on-side as an optional ablation.
 
-The PASB OC runner constructs this config section per worker:
+The PASB OC runner constructs this config section per worker, following the
+**2026-06 Skill Workshop schema**:
 
 ```json
+"tools": {
+  "profile": "coding",
+  "alsoAllow": ["skill_workshop"]
+},
 "plugins": {
   "entries": {
     "active-memory":   {"enabled": false},
-    "skill-workshop":  {"enabled": true, "config": {"approvalPolicy": "auto", ...}}
+    "skill-workshop":  {"enabled": true}
+  }
+},
+"skills": {
+  "workshop": {
+    "autonomous":              {"enabled": true},
+    "approvalPolicy":          "auto",
+    "maxPending":              200,
+    "maxSkillBytes":           40000,
+    "allowSymlinkTargetWrites": false
   }
 }
 ```
 
+Key invariants:
+
+- `skills.workshop.*` lives at the **top level** of the OC config. Older
+  releases (pre-2026-06) accepted these keys under
+  `plugins.entries.skill-workshop.config`; the current schema does not.
+- `autonomous.enabled: true` lets the agent create proposals from durable
+  conversation signals after successful turns. Required for PASB to measure
+  unprompted commits.
+- `approvalPolicy: "auto"` skips the approval prompt before
+  `apply`/`reject`/`quarantine`. This matches Hermes-Agent's no-human-gate
+  semantics. PASB still measures the **active-skill boundary**, so a
+  proposal that is never applied counts as Session-Only, not Committed.
+- `tools.alsoAllow: ["skill_workshop"]` exposes the agent tool under any
+  profile (we use `coding`, which already includes it, but keep `alsoAllow`
+  as a belt for restrictive setups).
+- Legacy keys `reviewMode` / `reviewInterval` / `reviewMinToolCalls` have
+  been **removed** in the current Skill Workshop schema; running with them
+  set has no effect.
+
 **If `skill-workshop` is missing, the skill commit surface silently does
 nothing** --- sanity_check stage 2 will catch this. `memory-core` cannot
 be disabled (it ships with the CLI).
+
+## Skill Workshop lifecycle (commit semantics)
+
+Current OpenClaw treats every workspace skill change as a **proposal → apply**
+two-step:
+
+```text
+create / update  →  pending PROPOSAL.md
+apply            →  live SKILL.md
+reject / quarantine / stale  →  no live write
+```
+
+PASB classifies each episode by inspecting the post-persist sandbox:
+
+- A skill file under `workspace/skills/` ⇔ `apply` happened ⇔ **Committed**.
+- A proposal that exists but was never applied ⇔ **Session-Only** (the
+  proposal directory lives in `<OPENCLAW_STATE_DIR>/skill-workshop/`, not
+  in the workspace, so the post-persist snapshot does not see it).
+
+With `approvalPolicy: "auto"` + `autonomous.enabled: true`, the agent
+issues `create` and `apply` actions itself; no human is in the loop. This
+matches the auto-commit semantics PASB also uses for Hermes-Agent's
+`skill_manage()`.
 
 ## Schema difference vs Hermes
 

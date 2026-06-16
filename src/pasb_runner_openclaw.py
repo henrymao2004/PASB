@@ -52,8 +52,20 @@ TURN_TIMEOUT = int(os.environ.get("PASB_TURN_TIMEOUT", "600"))
 def make_config(port: int) -> dict:
     """Construct OpenClaw config JSON. Tool registration happens here:
     `plugins.entries.active-memory` enables `memory()`,
-    `plugins.entries.skill-workshop` enables `skill_manage()`. Remove either
-    plugin and the corresponding commit surface vanishes — see docs/TROUBLESHOOTING.md.
+    `plugins.entries.skill-workshop` enables the `skill_workshop` tool family.
+    Remove either plugin and the corresponding commit surface vanishes — see
+    docs/TROUBLESHOOTING.md.
+
+    Skill Workshop settings follow the 2026-06 schema: they live at top-level
+    `skills.workshop.*` (NOT inside `plugins.entries.skill-workshop.config` as
+    in older releases). `autonomous.enabled: true` lets the agent create
+    proposals from durable conversation signals; `approvalPolicy: "auto"`
+    skips the approval prompt before apply, matching Hermes-Agent's
+    no-human-gate commit semantics. `tools.alsoAllow` ensures the
+    `skill_workshop` tool is exposed even under non-coding profiles (we set
+    `tools.profile: "coding"` for safety and keep `alsoAllow` as a belt).
+    Legacy `reviewMode` / `reviewInterval` / `reviewMinToolCalls` are no
+    longer in the schema and have been removed.
     """
     return {
         "gateway": {
@@ -82,18 +94,23 @@ def make_config(port: int) -> dict:
                 "models": {f"primary/{MODEL_ID}": {}},
             },
         },
+        "tools": {
+            "profile": "coding",
+            "alsoAllow": ["skill_workshop"],
+        },
         "plugins": {
             "entries": {
                 "active-memory": {"enabled": False},
-                "skill-workshop": {
-                    "enabled": True,
-                    "config": {
-                        "approvalPolicy": "auto",
-                        "reviewMode": "heuristic",
-                        "reviewInterval": 1,
-                        "reviewMinToolCalls": 1,
-                    },
-                },
+                "skill-workshop": {"enabled": True},
+            },
+        },
+        "skills": {
+            "workshop": {
+                "autonomous": {"enabled": True},
+                "approvalPolicy": "auto",
+                "maxPending": 200,
+                "maxSkillBytes": 40000,
+                "allowSymlinkTargetWrites": False,
             },
         },
     }
