@@ -1,6 +1,6 @@
 # Running PASB with OpenClaw
 
-OpenClaw is the second agent path. It's a JS-based scaffold (CLI + local gateway + plugin registry). Tool registration is **explicit** — `memory` and `skill_manage` exist only if the corresponding plugins are loaded.
+OpenClaw is the second agent path. It's a JS-based scaffold (CLI + local gateway + plugin registry). Tool registration is **explicit** — `memory` and `skill_workshop` exist only if the corresponding plugins are loaded.
 
 ## Install OpenClaw
 

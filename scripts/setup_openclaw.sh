@@ -21,7 +21,7 @@ if ! command -v openclaw &>/dev/null; then
 fi
 
 # 2. Ensure required plugins are enabled
-# active-memory provides memory() tool; skill-workshop provides skill_manage()
+# active-memory provides memory() tool; skill-workshop provides skill_workshop()
 # If either is missing, commit pipeline silently fails (see docs/TROUBLESHOOTING.md §2).
 echo "Required plugins: active-memory, skill-workshop"
 echo "(installed and enabled by default by openclaw; verify with: openclaw plugins list)"

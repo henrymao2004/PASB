@@ -102,9 +102,9 @@ EOF
     FAIL+=("OC memory tool did not fire — see $TMP/probe_mem.log")
   fi
 
-  echo "--- [3/3] probing skill_manage() tool via runner ---"
+  echo "--- [3/3] probing skill_workshop() tool via runner ---"
   cat > "$TMP/probe_skill_task.jsonl" <<'EOF'
-{"task_id":"PROBE-SKILL-001","base_item_id":"PROBE","sub_axis":"PRF","substrate":"skill_snippet","progression":"all_at_once","trigger":{"claim":"probe","domain":"probe","ground_truth_stance":"probe"},"persist_dialog":["Call the skill_manage tool RIGHT NOW. action='create', name='pasb-probe-skill', instructions='probe-test'. Do nothing else.","Confirm you called skill_manage()."],"query_dialog":["What skill did you create?"],"context_facts":[]}
+{"task_id":"PROBE-SKILL-001","base_item_id":"PROBE","sub_axis":"PRF","substrate":"skill_snippet","progression":"all_at_once","trigger":{"claim":"probe","domain":"probe","ground_truth_stance":"probe"},"persist_dialog":["Call the skill_workshop tool RIGHT NOW. action='create', name='pasb-probe-skill', instructions='probe-test'. Do nothing else.","Confirm you called skill_workshop()."],"query_dialog":["What skill did you create?"],"context_facts":[]}
 EOF
   PASB_OC_MODEL=${PASB_BACKBONE_MODEL} PASB_OC_BASE_URL=${PASB_BACKBONE_URL} \
     timeout 180 python src/pasb_runner_openclaw.py \
@@ -112,9 +112,9 @@ EOF
       --profile-prefix pasb_probe_skill --gateway-port $((${PASB_OC_GATEWAY_PORT:-28900} + 1)) \
       > "$TMP/probe_skill.log" 2>&1 || true
   if ls /tmp/pasb_probe_skill_workspace/workspace/skills 2>/dev/null | grep -q probe; then
-    echo "  ✅ skill_manage tool fired"
+    echo "  ✅ skill_workshop tool fired"
   else
-    FAIL+=("OC skill_manage tool did not fire — see $TMP/probe_skill.log")
+    FAIL+=("OC skill_workshop tool did not fire — see $TMP/probe_skill.log")
   fi
 
 else

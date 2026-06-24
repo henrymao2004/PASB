@@ -61,7 +61,7 @@ def make_config(port: int, workspace: str = "") -> dict:
     Tool registration:
     - `plugins.entries.active-memory` (disabled) — would inject the recall
       sub-agent; PASB matches Hermes's no-implicit-recall semantics.
-    - `plugins.entries.skill-workshop` (enabled) — provides `skill_manage`
+    - `plugins.entries.skill-workshop` (enabled) — provides `skill_workshop`
       and the auto-apply commit pipeline. `config.approvalPolicy: "auto"`
       skips the human approval prompt; the lightweight `reviewMode:
       "heuristic"` + `reviewInterval: 1` + `reviewMinToolCalls: 1` lets
@@ -102,7 +102,7 @@ def make_config(port: int, workspace: str = "") -> dict:
         },
         "tools": {
             "profile": "coding",
-            "alsoAllow": ["skill_manage"],
+            "alsoAllow": ["skill_workshop"],
             "exec": {"security": "full", "ask": "off", "host": "gateway"},
         },
         "plugins": {
